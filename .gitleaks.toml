@@ -2,6 +2,11 @@
 # Default rules stay on. Allowlists are exceptions for hand-written test inputs only and must be
 # scoped to one rule, one path and the exact line shape, so a real key added anywhere else (or a
 # different line in the same file) is still reported.
+#
+# Matching details that make the patterns look loose but are required:
+# - `dir` mode on Windows reports paths with `\`, `git` mode with `/`: the path accepts both.
+# - regexTarget "line" is matched against a fragment that can span several lines, so the line
+#   pattern needs (?m); a Windows checkout has CRLF endings, hence `\r?$`.
 
 title = "jettae"
 
@@ -14,6 +19,6 @@ description = """E2E sign-up password for throwaway accounts created in a dispos
 a fixed literal because sign-up and later logins run in separate Playwright tests."""
 targetRules = ["generic-api-key"]
 condition = "AND"
-paths = ['''^frontend/e2e/flow\.spec\.ts$''']
+paths = ['''(?:^|[\/])frontend[\/]e2e[\/]flow\.spec\.ts$''']
 regexTarget = "line"
-regexes = ['''(?m)^const PASSWORD = "[^"]{8,64}";$''']
+regexes = ['''(?m)^const PASSWORD = "[^"\r\n]{8,64}";\r?$''']
