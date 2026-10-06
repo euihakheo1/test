@@ -251,12 +251,13 @@ def test_logout_then_refresh_and_access_fail(client):
     assert client.post(f"{API}/auth/logout").status_code == 204
 
 
-def test_reused_refresh_revokes_the_family(client):
+def test_reused_refresh_revokes_the_family(client, clock, settings):
     _, first = _signup_cookies(client)
     r1 = send(client, "POST", f"{API}/auth/refresh", first)
     assert r1.status_code == 200
     second = {**first, **session_cookies(r1)}
     assert send(client, "GET", f"{API}/auth/me", second).status_code == 200
+    clock.advance(settings.refresh_reuse_grace_s + 1)
     replay = send(client, "POST", f"{API}/auth/refresh", first)
     assert replay.status_code == 401 and replay.json()["error"]["code"] == "refresh_token_reused"
     # every token of the family is dead: the rotated refresh token and the new access token
@@ -376,3 +377,102 @@ def test_bearer_helper_matches_cookie_identity(client):
     b = send(client, "GET", f"{API}/auth/me", cookies).json()
     assert a["user"] == b["user"] and a["tenant"] == b["tenant"]
     assert (a["auth_method"], b["auth_method"]) == ("jwt", "cookie")
+
+
+# ------------------------------------------------------------------ overlapping tabs, throttling
+def test_two_tabs_refreshing_with_one_cookie_keep_the_session(client, clock, settings):
+    """Tabs share one cookie jar; when their common access cookie expires both can send the
+    same refresh cookie before the first Set-Cookie lands. The second must not end the
+    session (reuse grace), and must not fork the refresh family."""
+    _, first = _signup_cookies(client)
+    tab_a = send(client, "POST", f"{API}/auth/refresh", first)
+    assert tab_a.status_code == 200
+    rotated = {**first, **session_cookies(tab_a)}
+    assert rotated["jt_refresh"] != first["jt_refresh"]
+    clock.advance(2)
+    tab_b = send(client, "POST", f"{API}/auth/refresh", first)
+    assert tab_b.status_code == 200, tab_b.text
+    # access cookie only: the jar keeps tab A's successor refresh token
+    assert "jt_refresh" not in _set_cookies(tab_b)
+    assert tab_b.cookies.get("jt_access")
+    _no_tokens_in(tab_b.json(), {**first, **session_cookies(tab_b)})
+    b_cookies = {**rotated, "jt_access": tab_b.cookies["jt_access"]}
+    assert send(client, "GET", f"{API}/auth/me", b_cookies).status_code == 200
+    # tab A's freshly rotated cookies still work, and its refresh token rotates normally
+    assert send(client, "GET", f"{API}/auth/me", rotated).status_code == 200
+    again = send(client, "POST", f"{API}/auth/refresh", rotated)
+    assert again.status_code == 200 and again.cookies.get("jt_refresh")
+    latest = {**rotated, **session_cookies(again)}
+    # past the window the old token is theft again: the whole session ends
+    clock.advance(settings.refresh_reuse_grace_s + 1)
+    late = send(client, "POST", f"{API}/auth/refresh", first)
+    assert late.status_code == 401 and late.json()["error"]["code"] == "refresh_token_reused"
+    assert send(client, "GET", f"{API}/auth/me", latest).status_code == 401
+
+
+def test_reuse_grace_never_revives_a_logged_out_session(client):
+    _, first = _signup_cookies(client)
+    r1 = send(client, "POST", f"{API}/auth/refresh", first)
+    second = {**first, **session_cookies(r1)}
+    assert send(client, "POST", f"{API}/auth/logout", second).status_code == 204
+    # within the window, but the session ended: no new access token
+    r = send(client, "POST", f"{API}/auth/refresh", first)
+    assert r.status_code == 401 and not r.cookies.get("jt_access")
+
+
+def test_reuse_grace_still_needs_the_csrf_header(client):
+    _, first = _signup_cookies(client)
+    assert send(client, "POST", f"{API}/auth/refresh", first).status_code == 200
+    r = send(client, "POST", f"{API}/auth/refresh", first, csrf=False)
+    assert r.status_code == 403 and r.json()["error"]["code"] == "csrf_failed"
+
+
+def test_reuse_grace_zero_keeps_strict_reuse_detection(rt, settings, clock, ingest, make_client):
+    strict = settings.model_copy(update={"refresh_reuse_grace_s": 0})
+    r2 = Runtime.build(strict, clock=clock, ingest=ingest)
+    try:
+        c = make_client(r2)
+        _, first = _signup_cookies(c, "g@g.example", "G")
+        assert send(c, "POST", f"{API}/auth/refresh", first).status_code == 200
+        replay = send(c, "POST", f"{API}/auth/refresh", first)
+        assert replay.status_code == 401
+        assert replay.json()["error"]["code"] == "refresh_token_reused"
+    finally:
+        r2.close()
+
+
+def test_failed_logins_from_one_ip_do_not_block_other_users_refresh(client, settings):
+    """All browsers can share one client IP (Next.js rewrite, Docker port publishing). An
+    attacker's failed logins from that IP must not make every user's refresh fail."""
+    _, victim = _signup_cookies(client, "v@v.example", "V")
+    codes = [
+        client.post(
+            f"{API}/auth/login", json={"email": f"x{i}@x.example", "password": PASSWORD + "-no"}
+        ).status_code
+        for i in range(settings.auth_ip_per_minute + 1)
+    ]
+    assert codes[-1] == 429 and set(codes) == {401, 429}  # the IP bucket is exhausted
+    r = send(client, "POST", f"{API}/auth/refresh", victim)
+    assert r.status_code == 200, r.text
+
+
+def test_refresh_is_limited_per_session_not_per_ip(rt, settings, clock, ingest, make_client):
+    tight = settings.model_copy(update={"refresh_per_minute": 3, "refresh_reuse_grace_s": 0})
+    r2 = Runtime.build(tight, clock=clock, ingest=ingest)
+    try:
+        c = make_client(r2)
+        _, cur = _signup_cookies(c, "p@p.example", "P")
+        _, other = _signup_cookies(c, "q@q.example", "Q")
+        for _ in range(3):
+            r = send(c, "POST", f"{API}/auth/refresh", cur)
+            assert r.status_code == 200
+            cur = {**cur, **session_cookies(r)}
+        limited = send(c, "POST", f"{API}/auth/refresh", cur)
+        assert limited.status_code == 429 and limited.headers.get("Retry-After")
+        # another session from the same client IP is not affected
+        assert send(c, "POST", f"{API}/auth/refresh", other).status_code == 200
+        # the limited request consumed nothing: the same cookie works after the window
+        clock.advance(61)
+        assert send(c, "POST", f"{API}/auth/refresh", cur).status_code == 200
+    finally:
+        r2.close()

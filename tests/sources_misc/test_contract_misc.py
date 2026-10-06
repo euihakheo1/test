@@ -179,3 +179,28 @@ def test_board_parsing() -> None:
     assert atts[0].name == "25년 개정 직매입 표준거래계약서(백화점, 대형마트).hwp"
     best = sorted(atts, key=lambda a: (ftc_board.FORMAT_RANK.get(a.ext, 9), a.file_no))[0]
     assert best.ext == "pdf"  # PDF preferred over HWP when both exist
+
+
+def test_run_without_downloaded_forms_refuses_and_keeps_the_summary(tmp_path: Path, monkeypatch):
+    """A fresh clone has the manifest but not data/raw/: the reviewed E5 block must not be
+    replaced by 'file_missing' rows, and the command must exit non-zero (like eval bpi)."""
+    import pytest
+
+    docs = [{"ntt": "1", "title": "직매입", "ok": True, "path": "data/raw/contract/1.hwp"}]
+    monkeypatch.setattr(contract_eval.ftc_board, "load_manifest", lambda: {"documents": docs})
+    monkeypatch.setattr(contract_eval, "repo_root", lambda: tmp_path)
+    md = tmp_path / "eval_results.md"
+    md.write_text("## E5 — reviewed\n\nkeep me\n", encoding="utf-8")
+    out = tmp_path / "contract_eval.json"
+    with pytest.raises(contract_eval.ContractInputsMissing):
+        contract_eval.run(out=out, md=md)
+    assert md.read_text(encoding="utf-8") == "## E5 — reviewed\n\nkeep me\n"
+    assert not out.exists()
+
+    def missing(**kw):
+        raise contract_eval.ContractInputsMissing("x")
+
+    monkeypatch.setattr(contract_eval, "run", missing)
+    with pytest.raises(SystemExit) as e:
+        contract_eval.run_cli()
+    assert e.value.code == 3

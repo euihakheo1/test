@@ -39,6 +39,7 @@ from jettae.domain.models import Decision
 from jettae.domain.money import Money
 from jettae.domain.status import ReconcileStatus
 from jettae.llm.base import LiveCallRefused, LLMError, TokenUsage
+from jettae.llm.budget import budget_limit_problem
 from jettae.llm.gateway import CallRecord, LLMGateway, LLMMode, gateway_from_env
 
 Strategy = Literal["single", "roles"]
@@ -95,6 +96,10 @@ def live_capability(env: Mapping[str, str] | None = None) -> LiveCapability:
         return LiveCapability(False, "JETTAE_LLM_BUDGET_KRW 값이 숫자가 아닙니다.")
     if not budget.is_finite() or budget <= 0:
         return LiveCapability(False, "서버의 LLM 예산(JETTAE_LLM_BUDGET_KRW)이 0원입니다.")
+    if budget_limit_problem(budget):
+        return LiveCapability(
+            False, "서버의 LLM 예산(JETTAE_LLM_BUDGET_KRW)이 허용 범위를 넘습니다."
+        )
     budget_db = (e.get("JETTAE_LLM_BUDGET_DB") or "").strip()
     scheme = budget_db.split(":", 1)[0].split("+", 1)[0]
     if (e.get("JETTAE_ENV") or "dev").strip().lower() == "prod" and scheme not in (

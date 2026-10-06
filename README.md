@@ -76,9 +76,9 @@
 | 저장소에 있음(공개 대상) | 저장소에 없음(`.gitignore`, 공개 대상 아님) |
 |---|---|
 | 소스·테스트·마이그레이션·배포 파일(`deploy/`)·CI(`.github/`) | 실제 `.env`, `.env.live-llm`, `.env.prod`, `frontend/.env.local` 등 값이 든 설정 파일 |
-| 가짜 값만 든 설정 예시 4개(아래 표) | API 키, JWT 서명 키, DB 비밀번호, 본인 법제처 OC |
-| 공개 자료의 수집 기록(`data/manifests/`), 공정위 의결서 표 전사(`data/seeds/`), 평가 요약(`docs/eval_results.md`) | 내려받은 원본(`data/raw/`), 다시 만들 수 있는 평가 결과 JSON(`data/results/`) |
-| 손으로 쓴 테스트 입력(`tests/`, `frontend/e2e/fixtures/`) | 사용자가 올린 파일·DB·LLM 캐시·비용 원장(`var/`), `*.db`, 로그(`*.log`), 캐시(`.mypy_cache` 등, `node_modules`, `.next`, E2E 결과) |
+| 가짜 값만 든 설정 예시 5개(아래 표) | API 키, JWT 서명 키, DB 비밀번호, 본인 법제처 OC |
+| 공개 자료의 수집 기록(`data/manifests/`), 공정위 의결서 표 전사와 본문 수치·짧은 본문 발췌(`data/seeds/`, `docs/PUBLIC_USE.md` 2절), 평가 요약(`docs/eval_results.md`) | 내려받은 원본(`data/raw/`), 다시 만들 수 있는 평가 결과 JSON(`data/results/`) |
+| 손으로 쓴 테스트 입력(`tests/`, `frontend/e2e/fixtures/`) | 사용자가 올린 파일·DB·LLM 캐시·비용 원장(`var/`), `*.db`, 로그(`*.log`, `logs/`), 캐시(`.mypy_cache` 등, `node_modules`, `.next`, E2E 결과), 개인 도구 설정(`.npmrc`, `.claude/settings.local.json` 등) |
 
 `python scripts/secret_scan.py`가 공개 대상 파일 전체와 모든 커밋 이력을 검사하고, CI는 gitleaks
 (`.gitleaks.toml`, 값은 가림)로 모든 커밋을 한 번 더 검사합니다. 결과에는 규칙 이름·경로·줄 번호만
@@ -98,7 +98,7 @@ Git Bash에서 그대로 동작합니다.
 
 ```bash
 uv sync --frozen --all-extras     # uv.lock 그대로 설치(백엔드 + 개발 도구 + llm/agents/postgres extra)
-uv run jettae --help              # 하위 명령: rules ingest eval agent ocr demo sources mcp api worker
+uv run jettae --help              # 하위 명령: modules rules ingest eval agent ocr demo sources mcp api worker
 ```
 
 ```bash
@@ -112,7 +112,7 @@ Windows에서 긴 경로(LongPathsEnabled)가 꺼져 있고 저장소 경로가 
 
 ## 설정 파일(.env) 읽는 규칙
 
-설정 예시 파일은 네 개이며 모든 비밀값 자리는 `change-me-...` 같은 가짜 값입니다.
+설정 예시 파일은 다섯 개이며 모든 비밀값 자리는 `change-me-...` 같은 가짜 값입니다.
 
 | 예시 파일 | 쓰임 | 복사해서 쓰는 이름(커밋 금지) |
 |---|---|---|
@@ -120,6 +120,7 @@ Windows에서 긴 경로(LongPathsEnabled)가 꺼져 있고 저장소 경로가 
 | `.env.live-llm.example` | 실제 LLM 실행(공급자·모델·API 키·예산·환율·가격·공유 예산·회사 동의) | `.env.live-llm` |
 | `.env.prod.example` | 운영(PostgreSQL, JWT 서명 키, 허용 출처, Secure 쿠키, 본인 DRF OC, worker 설정) | 서버의 비밀 저장소 |
 | `frontend/.env.example` | 화면(Next.js) 빌드 설정 | `frontend/.env.local` |
+| `deploy/.env.example` | Docker Compose 운영 배포(PostgreSQL 비밀번호, JWT 서명 키, 허용 출처, 네트워크) | `deploy/.env` |
 
 백엔드(모든 `jettae` 명령: api, worker, mcp, demo, agent, ocr, eval, sources ...):
 
@@ -130,9 +131,19 @@ Windows에서 긴 경로(LongPathsEnabled)가 꺼져 있고 저장소 경로가 
    기준입니다.
 3. 셸에 이미 있는 환경 변수가 파일 값보다 **우선**합니다.
 4. `JETTAE_ENV`는 `dev`, `test`, `prod`만 허용합니다. `production`, `staging` 같은 값은 시작 단계에서
-   거부됩니다. `prod`에서는 API·worker·MCP·마이그레이션·공개 자료 수집 명령이 시작할 때 운영 필수
-   설정(32바이트 이상 JWT 서명 키, PostgreSQL, https 허용 출처, Secure 쿠키, 본인 DRF OC, live LLM의
-   예산·공유 예산 DB)을 검사하고, 빠지면 **값은 출력하지 않고** 빠진 항목만 알린 뒤 종료합니다.
+   거부됩니다. `prod`에서는 각 명령이 **자기가 쓰는 설정만** 시작할 때 검사하고, 빠지거나 예시 값이면
+   **값은 출력하지 않고** 항목 이름만 알린 뒤 종료합니다.
+
+   | 검사 항목(`prod`) | api | worker | mcp | db(`api migrate`, `demo`) | sources(ftc·law) |
+   |---|---|---|---|---|---|
+   | `JETTAE_DATABASE_URL`이 PostgreSQL이고 비밀번호가 예시 값이 아님 | 예 | 예 | 예 | 예 | |
+   | `JETTAE_JWT_SECRET` 32바이트 이상, 예시 값 아님 | 예 | | 예 | | |
+   | `JETTAE_ALLOWED_ORIGINS`가 https, `JETTAE_COOKIE_SECURE`가 false 아님 | 예 | | | | |
+   | `JETTAE_LLM_MODE=live`이면 `JETTAE_LLM_BUDGET_KRW` 0 초과·유한(100억 원 이하), `JETTAE_LLM_BUDGET_DB` PostgreSQL | 예 | 예 | 예 | | |
+   | 본인 `JETTAE_DRF_OC`(샘플 `test`·예시 값 아님) | | | | | 예 |
+
+   그래서 예를 들어 `jettae worker run`은 JWT 서명 키가 예시 값이어도 시작합니다(worker는 토큰을
+   만들지 않음). 세부는 `docs/runbook.md` 2절.
 
 화면(Next.js, `frontend/`):
 
@@ -234,7 +245,7 @@ uv run jettae ingest parse var/demo/demo_bank.csv --out var/rows.json   # 행·�
 ```bash
 uv run jettae eval ftc --out var/ftc_eval.json --md var/ftc_eval.md     # E1·E2·E3 (추적 파일을 덮어쓰지 않는 실행)
 uv run jettae eval recompute                                           # E6 전체 vs 선택적 재계산
-uv run jettae eval contract                                            # E5 (contract-fetch 후)
+uv run jettae eval contract                                            # E5 (contract-fetch 후; 원본이 없으면 종료 코드 3, 요약 유지)
 uv run jettae eval bpi                                                 # E4 (bpi2019 fetch·convert 후)
 ```
 
@@ -306,7 +317,7 @@ MCP와 API는 같은 application service를 부릅니다. 테넌트는 토큰으
 | 설정 | 필수 | 뜻 |
 |---|---|---|
 | `JETTAE_LLM_MODE=live` | 예 | `offline`/`replay`는 기록된 응답만 사용 |
-| `JETTAE_LLM_BUDGET_KRW` | 예(0보다 큼) | 누적 상한(원). 같은 예산 저장소에 기록된 지출 전체의 상한이며 실행마다 초기화되지 않음 |
+| `JETTAE_LLM_BUDGET_KRW` | 예(0보다 크고 100억 이하인 유한한 수) | 누적 상한(원). 같은 예산 저장소에 기록된 지출 전체의 상한이며 실행마다 초기화되지 않음. `Infinity`·`1e400`·`NaN`은 거부 |
 | `JETTAE_LLM_PROVIDER` | 예 | `anthropic`(기본) 또는 `openai` |
 | `JETTAE_LLM_MODEL` / `JETTAE_OPENAI_MODEL` | openai는 필수 | 모델 id. anthropic은 비우면 코드 기본값 |
 | `ANTHROPIC_API_KEY` 또는 `OPENAI_API_KEY` | 예 | 공급자 SDK가 읽는 키. 설정 파일에만 두고 커밋하지 않음 |
@@ -359,18 +370,22 @@ uv run jettae ocr ftc-tables --decision 19065 --limit 3        # 공개 표 이�
 1. **비밀값은 환경으로**: `.env.prod.example`을 서버의 비밀 저장소(systemd `EnvironmentFile`, 컨테이너
    secret, 플랫폼 환경 변수)로 옮겨 실제 값으로 채웁니다. 파일로 둘 때는 저장소 밖 경로에 두고 권한을
    줄인 뒤 `JETTAE_ENV_FILE`로 지정합니다. 실제 값은 저장소에 커밋하지 않습니다.
-2. **시작 단계 검사**: `prod`에서는 JWT 서명 키(32바이트 이상, 예시 값 아님), PostgreSQL URL, https
-   `JETTAE_ALLOWED_ORIGINS`, Secure 쿠키, (공개 자료 수집 시) 본인 `JETTAE_DRF_OC`, (live LLM 시) 예산과
-   PostgreSQL 공유 예산 DB가 없으면 API·worker·MCP·마이그레이션이 시작하지 않습니다.
+2. **시작 단계 검사**: `prod`에서 각 명령은 자기가 쓰는 설정이 빠지거나 예시 값이면 시작하지 않습니다
+   ([설정 파일 4번의 표](#설정-파일env-읽는-규칙)). API는 JWT 서명 키·PostgreSQL·https 허용 출처·Secure
+   쿠키를, worker와 마이그레이션은 PostgreSQL URL(과 worker의 live LLM 예산)을 검사합니다.
 3. **마이그레이션**: 배포마다 API·worker보다 먼저 `jettae api migrate`(또는 `alembic upgrade head`)를
    실행하고, 그 전에 DB와 파일 저장소를 백업합니다(`docs/runbook.md` 6·8절).
 4. **프로세스**: API `jettae api serve --host 127.0.0.1 --port 8000 --workers 2`, worker
    `jettae worker run`(여러 개 가능), 화면은 `JETTAE_API_ORIGIN`을 내부 API 주소로 두고 `npm run build`
    후 `npm run start`.
-5. **HTTPS 역프록시**: 한 도메인 아래 `/api/`는 API로, 나머지는 Next 화면으로 보냅니다. TLS는 역프록시에서
-   끝냅니다. `jettae api serve`는 프록시 헤더(`X-Forwarded-For`)를 읽되 uvicorn의 `FORWARDED_ALLOW_IPS`
-   환경 변수(기본 `127.0.0.1`)에 있는 프록시만 믿습니다. 프록시가 다른 호스트에 있으면 그 IP를 넣어야
-   속도 제한이 실제 클라이언트 IP로 셉니다. 공유 속도 제한은 역프록시에 둡니다(`docs/runbook.md` 11절).
+5. **HTTPS 역프록시**: 한 도메인 아래 `/api/`는 **역프록시가 API로 직접** 보내고, 나머지만 Next 화면으로
+   보냅니다. 운영에서 `/api/`를 Next의 rewrite로 넘기지 않습니다: Next는 `X-Forwarded-For`를 붙이지 않아
+   API가 모든 사용자를 같은 IP(127.0.0.1)로 봅니다. TLS는 역프록시에서 끝냅니다. `jettae api serve`는
+   프록시 헤더(`X-Forwarded-For`)를 읽되 uvicorn의 `FORWARDED_ALLOW_IPS` 환경 변수(기본 `127.0.0.1`)에 있는
+   프록시만 믿습니다. 프록시가 다른 호스트나 컨테이너 밖에 있으면 그 IP를 넣어야 가입·로그인 속도 제한이
+   실제 클라이언트 IP로 셉니다(Docker Compose 파일은 네트워크 게이트웨이를 넣어 둠). 토큰 갱신
+   (`/auth/refresh`)은 IP가 아니라 세션별로 제한하므로, 한 IP의 실패한 로그인이 다른 사용자의 갱신을 막지
+   않습니다. 공유 속도 제한은 역프록시에 둡니다(`docs/runbook.md` 11절).
 6. **Docker Compose**: `deploy/Dockerfile`(API·worker 공용 이미지)과 `deploy/docker-compose.yml`(PostgreSQL 16,
    1회성 migrate, api, worker)이 있습니다. 화면과 역프록시는 포함하지 않습니다. 이 파일들은 Docker가 없는
    개발 PC에서 **빌드·실행해 보지 않았습니다**.
@@ -381,9 +396,18 @@ cp .env.example .env            # POSTGRES_PASSWORD, JETTAE_JWT_SECRET, JETTAE_A
 docker compose up -d --build
 ```
 
+API 컨테이너는 Compose 네트워크의 게이트웨이(기본 `172.31.250.1`, 서브넷 `172.31.250.0/24`)에서 온
+`X-Forwarded-For`만 믿습니다. 서버의 다른 네트워크와 겹치면 `deploy/.env`에서 `JETTAE_COMPOSE_SUBNET`과
+`JETTAE_PROXY_GATEWAY`를 함께 바꿉니다.
+
 백업·복구·롤백·환경 변수 전체 목록은 `docs/runbook.md`에 있습니다.
 
 ## 테스트 · E2E · CI · 보안 검사
+
+테스트는 셸의 `JETTAE_*`·`ANTHROPIC_*`·`OPENAI_*` 변수와 `JETTAE_ENV_FILE`, 작업 폴더의 `.env`를 읽지
+않습니다(`tests/_plugins/jettae_testenv.py`가 시작할 때 지움; `JETTAE_TEST_PG_URL`만 남김). 그래서 실제
+LLM 설정을 `export JETTAE_ENV_FILE=.env.live-llm`한 터미널에서 실행해도 결과가 같고 API 키가 테스트에 닿지
+않습니다.
 
 ```bash
 uv run pytest -q                                  # 백엔드 전체(PostgreSQL 전용 테스트는 건너뜀)
@@ -426,9 +450,9 @@ format, mypy, pytest, SQLite 마이그레이션 왕복, 비밀값 검사), postg
 |---|---|---|---|
 | 법정 지급기한·지연일수·지연이자(엔진) | 예 | 단위·속성 테스트, 법령·고시 원문 대조(`law check`), 공정위 의결서 전사 행 E1~E3 | 전사 행은 사람이 검증하지 않음(`verified=no`) |
 | 대사(입금 배분, 상태 6종), 선택적 재계산 | 예 | 테스트, E6 재계산 동등성(실제 기록) | 실제 은행 내보내기 원본 |
-| 문서 읽기(CSV/XLSX/PDF), XLSX 자원 상한 | 예 | 테스트(행·열·셀·병합·zip·DTD 상한 회귀 포함), 실제 cp949 은행 CSV | 실제 홈택스 엑셀, 100만 셀 근처 정상 파일의 메모리 사용량 |
+| 문서 읽기(CSV/XLSX/PDF), XLSX 자원 상한 | 예 | 테스트(행·열·셀·병합·zip·DTD 상한, 루트 이름을 바꾼 공유 문자열·통합 문서 부분, BOM 없는 UTF-16, 스타일·관계·콘텐츠 형식 부분 원소 상한 회귀 포함), 실제 cp949 은행 CSV | 실제 홈택스 엑셀, 100만 셀 근처 정상 파일의 메모리 사용량, 상한 안쪽 최대 크기 파일의 처리 시간 |
 | 화면 흐름(업로드→매핑→분석→상세→정정→재승인→보고서) | 예 | Playwright E2E(chromium, 로컬 SQLite) | 다른 브라우저, 여러 탭 동시 사용 |
-| HttpOnly 쿠키 세션·CSRF·refresh 회전·로그아웃·회사 격리 | 예 | API 테스트, E2E, 로컬 curl | 실제 HTTPS 배포(Secure 쿠키·역프록시 뒤 Origin 검사) |
+| HttpOnly 쿠키 세션·CSRF·refresh 회전·로그아웃·회사 격리 | 예 | API 테스트(겹친 갱신 유예, 세션별 갱신 제한, 로그인 실패와 갱신 분리 포함), 화면 단위 테스트(갱신 429·5xx에 로그인 유지), E2E, 로컬 curl | 실제 HTTPS 배포(Secure 쿠키·역프록시 뒤 Origin 검사), 실제 브라우저 여러 탭 |
 | 환경 이름·운영 필수 설정 시작 검사 | 예 | 테스트, 잘못된 값으로 실제 실행 | 실제 운영 서버 |
 | Agent 조사(화면·worker, single/roles) | 예 | 오프라인·재생·가짜 공급자 테스트, E2E(offline) | 실제 LLM 조사 품질, live 모드 실제 호출 |
 | LLM 게이트웨이(예산·재생·동의), VLM OCR | 예 | 가짜 공급자 테스트, 공유 예산 경합(SQLite·PostgreSQL) | 실제 유료 호출 0회, OCR 정확도 |

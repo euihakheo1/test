@@ -5,6 +5,7 @@ being copied unchanged."""
 from __future__ import annotations
 
 import os
+import secrets
 import subprocess
 from collections.abc import Iterator
 from pathlib import Path
@@ -14,7 +15,13 @@ from dotenv import dotenv_values
 
 from jettae.config import REPO_ROOT, require_valid_environment
 
-EXAMPLES = (".env.example", ".env.live-llm.example", ".env.prod.example")
+EXAMPLES = (
+    ".env.example",
+    ".env.live-llm.example",
+    ".env.prod.example",
+    "deploy/.env.example",
+    "frontend/.env.example",
+)
 
 
 @pytest.fixture
@@ -57,9 +64,43 @@ def test_prod_example_is_refused_until_secrets_are_replaced(env):
     assert "JETTAE_DRF_OC" in str(e.value)
 
 
+def test_prod_example_db_password_is_refused_until_replaced(env):
+    # only the JWT secret and the OC replaced: the example DSN's password is still fake
+    _use(env, ".env.prod.example")
+    os.environ["JETTAE_JWT_SECRET"] = secrets.token_urlsafe(48)
+    os.environ["JETTAE_DRF_OC"] = "own" + secrets.token_hex(4)
+    placeholder = dotenv_values(REPO_ROOT / ".env.prod.example")["JETTAE_DATABASE_URL"] or ""
+    secret_part = placeholder.split("://", 1)[1].split("@", 1)[0].split(":", 1)[1]
+    for comp in ("api", "worker", "mcp", "db"):
+        with pytest.raises(SystemExit) as e:
+            require_valid_environment(comp)
+        msg = str(e.value)
+        assert "JETTAE_DATABASE_URL" in msg and "placeholder password" in msg
+        assert secret_part not in msg
+
+
+def test_compose_example_db_password_is_refused(env):
+    # docker-compose.yml interpolates POSTGRES_PASSWORD into the database URL
+    values = dotenv_values(REPO_ROOT / "deploy" / ".env.example")
+    os.environ["JETTAE_ENV"] = "prod"
+    os.environ["JETTAE_JWT_SECRET"] = secrets.token_urlsafe(48)
+    os.environ["JETTAE_ALLOWED_ORIGINS"] = "https://app.example.com"
+    os.environ["JETTAE_DATABASE_URL"] = (
+        "postgresql+psycopg://jettae:" + str(values["POSTGRES_PASSWORD"]) + "@db:5432/jettae"
+    )
+    for comp in ("api", "worker", "db"):
+        with pytest.raises(SystemExit) as e:
+            require_valid_environment(comp)
+        assert "placeholder password" in str(e.value)
+        assert str(values["POSTGRES_PASSWORD"]) not in str(e.value)
+
+
 def test_prod_example_passes_once_real_values_are_set(env):
     _use(env, ".env.prod.example")
-    os.environ["JETTAE_JWT_SECRET"] = "Qm7-pX2rT9vL4kN8sB1cH6jD0fG5aE3wZuY"  # secret-scan: allow
+    os.environ["JETTAE_JWT_SECRET"] = secrets.token_urlsafe(48)
+    os.environ["JETTAE_DATABASE_URL"] = (
+        "postgresql+psycopg://jettae:" + secrets.token_urlsafe(24) + "@db.internal:5432/jettae"
+    )
     for comp in ("api", "worker", "mcp", "db"):
         assert require_valid_environment(comp).env == "prod"
 
@@ -83,7 +124,7 @@ def test_examples_are_publishable_and_values_are_fake(name):
     assert out.returncode == 1, f"{name} is ignored by .gitignore"
     for key, value in dotenv_values(path).items():
         if any(w in key for w in ("SECRET", "API_KEY", "PASSWORD", "DRF_OC")) and value:
-            assert value == "test" or "change-me" in value, key
+            assert value == "test" or value.startswith("change-me"), key
         if key == "JETTAE_DATABASE_URL" and value and "@" in value:
             assert "change-me" in value, key
 

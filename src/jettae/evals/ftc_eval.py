@@ -189,7 +189,7 @@ def write_outputs(
     out = out or results_dir() / "ftc_eval.json"
     long_path(out.parent).mkdir(parents=True, exist_ok=True)
     long_path(out).write_text(
-        json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8"
+        json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n"
     )
     md_path = md or (docs or REPO_DOCS) / "eval_results.md"
     update_markdown(md_path, render_markdown(report, results_path=display_path(out)))

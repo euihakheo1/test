@@ -197,7 +197,7 @@ test("cookies are HttpOnly, unsafe API calls need the CSRF header, logout ends t
   await expect(page).toHaveURL(/\/login\?next=%2Fresults/);
 });
 
-test("expired access cookie is refreshed once; reusing a rotated refresh token ends the session; tenants are isolated", async ({
+test("expired access cookie is refreshed once; an overlapping refresh keeps the session, later reuse of a rotated token ends it; tenants are isolated", async ({
   page,
   context,
   baseURL,
@@ -226,11 +226,22 @@ test("expired access cookie is refreshed once; reusing a rotated refresh token e
   expect(newRefresh).not.toBe("");
   expect(newRefresh).not.toBe(oldRefresh);
 
-  // 회전된(이전) refresh 토큰을 다시 쓰면 401 이고, 같은 묶음의 새 토큰도 폐기된다.
+  // 회전 직후(유예 안)에 이전 토큰이 다시 오면 다른 탭의 겹친 갱신으로 보고 access 쿠키만 준다:
+  // refresh 쿠키는 새로 심지 않고 세션도 끝내지 않는다.
   const thief = await apiRequest.newContext({ baseURL });
-  const reuse = await thief.post("/api/v1/auth/refresh", {
-    headers: { Cookie: `jt_refresh=${oldRefresh}; jt_csrf=${csrf}`, "X-CSRF-Token": csrf },
-  });
+  const replay = () =>
+    thief.post("/api/v1/auth/refresh", {
+      headers: { Cookie: `jt_refresh=${oldRefresh}; jt_csrf=${csrf}`, "X-CSRF-Token": csrf },
+    });
+  const overlap = await replay();
+  expect(overlap.status()).toBe(200);
+  const setCookies = overlap.headersArray().filter((h) => h.name.toLowerCase() === "set-cookie");
+  expect(setCookies.some((h) => h.value.startsWith("jt_refresh="))).toBe(false);
+  expect(setCookies.some((h) => h.value.startsWith("jt_access="))).toBe(true);
+
+  // 유예(E2E 서버 2초)가 지난 뒤 회전된 토큰을 다시 쓰면 401 이고, 같은 묶음의 새 토큰도 폐기된다.
+  await page.waitForTimeout(2500);
+  const reuse = await replay();
   expect(reuse.status()).toBe(401);
   await thief.dispose();
 

@@ -39,10 +39,10 @@ The file is loaded into the process environment, so adapters that read `os.envir
 | Component | Refused when |
 |---|---|
 | `api`, `mcp` | `JETTAE_JWT_SECRET` missing, shorter than 32 bytes, a known placeholder or low-variety |
-| `api`, `worker`, `mcp`, `db` (migrations, demo) | `JETTAE_DATABASE_URL` is not PostgreSQL |
+| `api`, `worker`, `mcp`, `db` (migrations, demo) | `JETTAE_DATABASE_URL` is not PostgreSQL, or its password contains a placeholder marker (`change-me`, `example`, ...) |
 | `api` | `JETTAE_ALLOWED_ORIGINS` empty or not https; `JETTAE_COOKIE_SECURE=false` |
 | `sources ftc`, `sources law` | `JETTAE_DRF_OC` missing, `test` or a placeholder |
-| `api`, `worker`, `mcp` with `JETTAE_LLM_MODE=live` | `JETTAE_LLM_BUDGET_KRW <= 0` or `JETTAE_LLM_BUDGET_DB` not PostgreSQL |
+| `api`, `worker`, `mcp` with `JETTAE_LLM_MODE=live` | `JETTAE_LLM_BUDGET_KRW` not a finite number in (0, 10 000 000 000] (`Infinity`, `1e400`, `NaN` refused), or `JETTAE_LLM_BUDGET_DB` not PostgreSQL or with a placeholder password |
 
 The message lists every problem by variable name and never prints values. A wildcard origin is
 refused in every environment. `jettae demo run` additionally refuses anything but `dev`.
@@ -64,7 +64,9 @@ refused in every environment. `jettae demo run` additionally refuses anything bu
 | `JETTAE_COOKIE_SECURE` | on in prod, off otherwise | `Secure` flag of the session cookies; `false` is refused in prod |
 | `JETTAE_ARGON2_TIME_COST` / `_MEMORY_KIB` / `_PARALLELISM` | `3` / `65536` / `4` | Password hashing cost |
 | `JETTAE_PASSWORD_MIN_LENGTH` | `10` | |
-| `JETTAE_AUTH_IP_PER_MINUTE` | `30` | signup/login/refresh per client IP per minute (429 + `Retry-After`); `0` disables. Per API process |
+| `JETTAE_AUTH_IP_PER_MINUTE` | `30` | signup/login per client IP per minute (429 + `Retry-After`); `0` disables. Per API process |
+| `JETTAE_REFRESH_PER_MINUTE` | `30` | `POST /auth/refresh` per **session** per minute (not per IP: one client's failed logins must not block other users' refresh); `0` disables |
+| `JETTAE_REFRESH_REUSE_GRACE_S` | `20` | A rotated refresh token presented again within this window (tabs refreshing together) gets a new access cookie only; later reuse ends the session. `0` = strict reuse detection |
 | `JETTAE_LOGIN_MAX_FAILURES` / `JETTAE_LOGIN_LOCKOUT_S` | `5` / `900` | Failed logins per email inside the window, then 429. Per API process |
 | `JETTAE_PUBLIC_IP_PER_MINUTE` | `30` | `POST /api/v1/public/due` (no login) per client IP per minute |
 | `JETTAE_MAX_UPLOAD_BYTES` | `20971520` | Upload size limit, enforced while streaming (413) |
@@ -83,7 +85,8 @@ refused in every environment. `jettae demo run` additionally refuses anything bu
 | `JETTAE_LLM_BUDGET_ID` / `JETTAE_LLM_RESERVATION_TTL_S` | `default` / `900` | Budget row; after the TTL an unsettled reservation (crashed process) still counts as possibly billed |
 
 uvicorn itself reads `FORWARDED_ALLOW_IPS` (default `127.0.0.1`): the proxies whose
-`X-Forwarded-*` headers are trusted (`jettae api serve` enables proxy headers).
+`X-Forwarded-*` headers are trusted (`jettae api serve` enables proxy headers). The Compose file
+sets it to its network gateway (section 7).
 
 ## 3. Local quick start (SQLite)
 
@@ -232,11 +235,21 @@ docker compose up -d --scale worker=3
 ```
 
 **Docker was not run on the development machine (Docker is not installed there).** The Dockerfile
-and compose file have not been built or started; only the YAML was parsed.
+and compose file have not been built or started; only the YAML was parsed
+(`tests/config/test_ci_workflow.py`).
+
+Client IPs: the host's reverse proxy reaches the published port, and the API container sees the
+connection coming from the Compose network gateway, not from `127.0.0.1`. The compose file pins
+the network (`JETTAE_COMPOSE_SUBNET`, default `172.31.250.0/24`) and sets the API's
+`FORWARDED_ALLOW_IPS` to its gateway (`JETTAE_PROXY_GATEWAY`, default `172.31.250.1`), so only
+that hop's `X-Forwarded-For` is trusted. Change both together if the subnet collides. Without this
+every client would share one IP for the signup/login limit. This reasoning follows Docker's port
+publishing; it was not observed on a running Docker host.
 
 Production layout: a TLS reverse proxy on one domain sends `/api/` to the API (published on the
 host's loopback only) and everything else to `next start` (built with `JETTAE_API_ORIGIN` = the
-internal API URL). Set `JETTAE_ALLOWED_ORIGINS` to that https origin. Secrets come from the
+internal API URL). Do not let `/api/` go through the Next.js rewrite in production: Next adds no
+`X-Forwarded-For`, so the API would see every browser as `127.0.0.1`. Set `JETTAE_ALLOWED_ORIGINS` to that https origin. Secrets come from the
 environment or a secret store, never from files in the repository.
 
 ## 8. Rollback
@@ -264,7 +277,10 @@ diff, API flow with isolation and approval 409, concurrent `FOR UPDATE SKIP LOCK
 incremental = full recompute, refresh-token rotation race, NUL byte in an uploaded CSV, document
 versions/evidence links, carry-over and duplicate lines, shared LLM budget across processes.
 
-Those tests are skipped unless `JETTAE_TEST_PG_URL` is set, and they **drop the `public` schema**
+The test run is hermetic (`tests/_plugins/jettae_testenv.py`): it drops `JETTAE_*` (except
+`JETTAE_TEST_PG_URL`), `ANTHROPIC_*` and `OPENAI_*` and ignores `JETTAE_ENV_FILE` and `./.env`.
+
+PostgreSQL tests are skipped unless `JETTAE_TEST_PG_URL` is set, and they **drop the `public` schema**
 of the target database: point it only at a throwaway database. CI uses a `postgres:16` service
 container (`.github/workflows/ci.yml`).
 
@@ -290,11 +306,16 @@ add one at the reverse proxy, e.g. nginx:
 
 ```nginx
 limit_req_zone $binary_remote_addr zone=jettae_auth:10m rate=30r/m;
-location ~ ^/api/v1/(auth/(login|signup|refresh)|public/) {
+location ~ ^/api/v1/(auth/(login|signup)|public/) {
     limit_req zone=jettae_auth burst=10 nodelay;
     proxy_pass http://jettae_api;
 }
 ```
+
+`/auth/refresh` is deliberately not in that per-IP zone: it already needs a valid refresh
+cookie and the session's CSRF token, and is limited per session by the API. Behind a proxy all
+browsers may share one IP, so a per-IP refresh limit would let one client's failed logins sign
+everyone else out of the UI.
 
 The client IP seen by the API is the real one only when the proxy is listed in
 `FORWARDED_ALLOW_IPS` (default `127.0.0.1`). This nginx snippet was not executed on the

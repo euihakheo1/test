@@ -53,6 +53,13 @@ services:
   api:
     <<: *app
     command: ["jettae", "api", "serve", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    environment:
+      <<: *app-env
+      # Requests from the host's reverse proxy reach the container from the bridge gateway,
+      # not from 127.0.0.1, so uvicorn's default would ignore X-Forwarded-For and every client
+      # would share one IP for the signup/login limit. Trust only that gateway (the network
+      # below pins its subnet). Change both together if the subnet collides with yours.
+      FORWARDED_ALLOW_IPS: ${JETTAE_PROXY_GATEWAY:-172.31.250.1}
     ports:
       # published on the host's loopback only: TLS and public traffic go through the reverse proxy
       - "127.0.0.1:${JETTAE_API_PORT:-8000}:8000"
@@ -68,6 +75,13 @@ services:
     depends_on:
       migrate:
         condition: service_completed_successfully
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${JETTAE_COMPOSE_SUBNET:-172.31.250.0/24}
+          gateway: ${JETTAE_PROXY_GATEWAY:-172.31.250.1}
 
 volumes:
   pgdata:

@@ -1430,3 +1430,65 @@ before; the cause of these 47 was not confirmed.
   typecheck (no `.next`), 40 unit tests, build, `e2e:install`, E2E 3 passed; `git status` clean
   afterwards. gitleaks (history and exported tree) and `scripts/secret_scan.py`: 0 findings.
   Details and the not-verified list: `docs/release-verification.md`.
+
+## 2026-10-07 — review fixes before publication (integrator)
+
+### Done (each with a regression test)
+- XLSX guard (`ingest/xlsx_guard.py`): parts are chosen like openpyxl (content types, workbook
+  relationships, fixed styles/docProps paths, chart-sheet closure) instead of by root-element
+  name; members are sniffed like libxml2/expat and XML is accepted only as UTF-8 or BOM-marked
+  UTF-16 (`xml_encoding`); new caps for shared strings per string and in total, style records
+  (`styles`, default 100 000), and elements of every other parsed part (`xml_elements`, 250 000
+  per part / 750 000 total). Reviewer probes re-run: renamed `<sstX>`/`<workbookX>` roots and
+  UTF-16LE without BOM are rejected; a 0.13 MiB styles bomb (200 000 `<xf>`) is rejected in 0.4 s
+  instead of 4.5 s / 376 MiB. Tests: `tests/ingest/test_xlsx_limits.py` (11 new).
+- Auth: `/auth/refresh` is no longer under the per-IP signup/login limiter; it is limited per
+  session (`JETTAE_REFRESH_PER_MINUTE`). A rotated refresh token reused within
+  `JETTAE_REFRESH_REUSE_GRACE_S` (20 s) in a valid session gets an access cookie only (overlapping
+  tabs); later reuse still revokes the session. The web client clears the session only on
+  401/403 from refresh (429/5xx/network -> state `error`). Compose sets `FORWARDED_ALLOW_IPS` to a
+  pinned network gateway. Tests: `tests/api/test_auth_cookies.py` (6 new), updated reuse tests,
+  `frontend/src/lib/client.test.ts` (4 new), E2E refresh test (grace 2 s in the E2E server).
+- Config: prod live budget parsed as Decimal and must be finite, > 0 and <= 10 000 000 000 KRW
+  (also enforced by `Budget`, `gateway_from_env`, `live_capability`); placeholder passwords in
+  `JETTAE_DATABASE_URL` / `JETTAE_LLM_BUDGET_DB` are refused in prod (value never printed).
+- `scripts/secret_scan.py`: path rules mirror every sensitive `.gitignore` entry (blob store, LLM
+  cache/ledger, `data/results/`, prior-art PDFs, `logs/`, coverage, per-user tool settings); the
+  inline `secret-scan: allow` marker is gone, replaced by `ALLOWLIST` (rule + path + line shape,
+  also covering the same lines in the earlier commits). `.gitignore` adds `.npmrc`, `.pypirc`,
+  `.netrc`, `.envrc`, `.claude/settings.local.json`, `CLAUDE.local.md`.
+- CI: the PostgreSQL step uses `shell: bash` (pipefail) and requires a "passed" count; the
+  frontend job asserts that no provider key is present. `tests/config/test_ci_workflow.py`
+  checks both (and the Compose gateway) statically.
+- `.gitattributes` (`* text=auto eol=lf`): seeds and engine sources hash the same on Windows;
+  evaluation writers write LF. `uv run jettae eval ftc` re-run: all E1/E2/E3 numbers unchanged,
+  engine code hash now that of the committed sources, input hashes the LF ones.
+- `jettae eval contract` (and `sources law contract-extract`) exit 3 without touching
+  `docs/eval_results.md` when a downloaded form is missing; the run header names the real command.
+- Hermetic tests: `tests/_plugins/jettae_testenv.py` (pytest `-p`) removes `JETTAE_*` (except
+  `JETTAE_TEST_PG_URL`), `ANTHROPIC_*`, `OPENAI_*` and ignores `JETTAE_ENV_FILE`/`./.env`.
+- Docs: README (five example files incl. `deploy/.env.example`, per-component prod checks table,
+  `modules` subcommand, proxy/refresh limits, hermetic tests, `eval contract` exit 3), runbook,
+  ARCHITECTURE, PUBLIC_USE (seed file holds short verbatim decision excerpts; scanner coverage),
+  `frontend/README.md`, dependency audit re-run.
+
+### Commands run (main working tree, Windows 11, Git Bash)
+- `uv run pytest -q`: 657 passed, 8 skipped (PostgreSQL-only).
+- `uv run --with pgserver python deploy/run_pg_tests.py <tmp>`: 8 passed, 16 deselected
+  (PostgreSQL 16.2, pgserver on Windows).
+- `uv run ruff check .`, `uv run ruff format --check .` (268 files), `uv run mypy src` (152 files): clean.
+- Alembic SQLite round trip (heads, upgrade, downgrade base, upgrade, check): no new operations.
+- Frontend: `npm run lint`, `npm run typecheck`, `npm test` (44 passed), `npm run build`,
+  `npm run e2e` (3 passed). One E2E run failed before the test update (immediate replay now hits
+  the grace window); after that failure a `jettae worker run` process of that run was still alive
+  and the next run's API exited at startup with WinError 10014; after stopping the leftover
+  processes by hand the run passed (the causal link was not established).
+- `actionlint` 1.7.12 with shellcheck on `ci.yml`: clean.
+- `pip-audit` (PyPI and OSV) and `npm audit`: see `docs/security/dependency-audit.md`.
+
+### Not verified
+- GitHub Actions on GitHub, Docker/Compose (the gateway behaviour is reasoned from Docker's port
+  publishing), a real HTTPS deployment, real browsers with several tabs, Linux PostgreSQL outside
+  CI configuration, paid LLM calls and model quality, BPI 2019 (E4), real Hometax/bank exports,
+  memory/time of the largest XLSX that passes every cap.
+

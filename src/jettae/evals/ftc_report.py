@@ -25,7 +25,7 @@ def update_markdown(path: Path, block: str) -> None:
         text = pre + new + post.lstrip("\n")
     else:
         text = text.rstrip("\n") + "\n\n" + new
-    lp.write_text(text, encoding="utf-8")
+    lp.write_text(text, encoding="utf-8", newline="\n")  # tracked file: LF on every OS
 
 
 def _pct(x: dict[str, Any]) -> str:

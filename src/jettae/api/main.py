@@ -207,6 +207,11 @@ def create_app(runtime: Runtime | None = None, settings: Settings | None = None)
         if rt.settings.auth_ip_per_minute > 0
         else None
     )
+    app.state.refresh_limiter = (
+        WindowLimiter(rt.settings.refresh_per_minute, 60.0, rt.clock)
+        if rt.settings.refresh_per_minute > 0
+        else None
+    )
     app.state.public_ip_limiter = (
         WindowLimiter(rt.settings.public_ip_per_minute, 60.0, rt.clock)
         if rt.settings.public_ip_per_minute > 0

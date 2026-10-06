@@ -21,12 +21,15 @@ import os
 import secrets
 import warnings
 from collections.abc import Mapping, MutableMapping
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlsplit
 
 from pydantic import AliasChoices, Field, ValidationError, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -76,8 +79,17 @@ class Settings(BaseSettings):
     argon2_memory_kib: int = 65536
     argon2_parallelism: int = 4
     password_min_length: int = 10
-    # throttling of unauthenticated auth endpoints (per API process; 0 disables)
-    auth_ip_per_minute: int = 30  # signup/login/refresh requests per client IP per minute
+    # A rotated refresh token presented again within this many seconds is answered with a new
+    # access token (no new refresh token) instead of ending the session: tabs sharing one
+    # cookie jar refresh at the same moment when their common access cookie expires. Later
+    # reuse still ends the session (theft). 0 = no grace.
+    refresh_reuse_grace_s: int = 20
+    # throttling (per API process; 0 disables)
+    auth_ip_per_minute: int = 30  # signup/login requests per client IP per minute
+    # POST /auth/refresh per session per minute. Not per IP: behind a proxy or the Next.js
+    # rewrite every browser can share one client IP, and failed logins of one client must not
+    # make every other user's refresh fail.
+    refresh_per_minute: int = 30
     login_max_failures: int = 5  # failed logins per email within login_lockout_s -> 429
     login_lockout_s: int = 900
     public_ip_per_minute: int = 30  # POST /public/due per client IP per minute
@@ -259,6 +271,35 @@ def _is_postgres(url: str | None) -> bool:
     return bool(url) and str(url).split(":", 1)[0].split("+", 1)[0] in ("postgresql", "postgres")
 
 
+def _positive_finite(raw: str | None) -> bool:
+    # Decimal, not float: float("1e400") is inf and float("Infinity") > 0, so an unlimited
+    # budget would pass. Same rule as the LLM budget itself (llm.budget.budget_limit_problem).
+    from jettae.llm.budget import budget_limit_problem
+
+    try:
+        d = Decimal((raw or "0").strip())
+    except InvalidOperation:
+        return False
+    return d > 0 if budget_limit_problem(d) is None else False
+
+
+def database_password_problem(url: str | None, variable: str) -> str | None:
+    """Why the password in ``url`` is unfit for prod, or None. The example files ship a
+    placeholder password; never includes the password itself."""
+    if not url:
+        return None
+    try:
+        password = make_url(url).password
+    except ArgumentError:
+        return f"{variable} is not a valid database URL"
+    if password is None:
+        return None
+    low = str(password).lower()
+    if any(m in low for m in _PLACEHOLDER_MARKERS):
+        return f"{variable} contains a placeholder password; set the real database password"
+    return None
+
+
 def environment_problems(
     settings: Settings, component: str, environ: Mapping[str, str] | None = None
 ) -> list[str]:
@@ -276,10 +317,14 @@ def environment_problems(
         p = jwt_secret_problem(settings.jwt_secret)
         if p:
             problems.append(p)
-    if base in ("api", "worker", "mcp", "db") and not _is_postgres(settings.database_url):
-        problems.append(
-            "JETTAE_DATABASE_URL must be a PostgreSQL URL in prod (postgresql+psycopg://...)"
-        )
+    if base in ("api", "worker", "mcp", "db"):
+        if not _is_postgres(settings.database_url):
+            problems.append(
+                "JETTAE_DATABASE_URL must be a PostgreSQL URL in prod (postgresql+psycopg://...)"
+            )
+        p = database_password_problem(settings.database_url, "JETTAE_DATABASE_URL")
+        if p:
+            problems.append(p)
     if base == "api":
         if not settings.allowed_origins:
             problems.append("JETTAE_ALLOWED_ORIGINS must list the web origin(s) in prod")
@@ -298,18 +343,19 @@ def environment_problems(
     if base in ("api", "worker", "mcp"):
         mode = (e.get("JETTAE_LLM_MODE") or "offline").strip().lower()
         if mode == "live":
-            raw = (e.get("JETTAE_LLM_BUDGET_KRW") or "0").strip()
-            try:
-                budget_ok = float(raw) > 0
-            except ValueError:
-                budget_ok = False
-            if not budget_ok:
-                problems.append("JETTAE_LLM_MODE=live requires JETTAE_LLM_BUDGET_KRW > 0 in prod")
+            if not _positive_finite(e.get("JETTAE_LLM_BUDGET_KRW")):
+                problems.append(
+                    "JETTAE_LLM_MODE=live requires JETTAE_LLM_BUDGET_KRW > 0 (finite, at most "
+                    "10000000000) in prod"
+                )
             if not _is_postgres(e.get("JETTAE_LLM_BUDGET_DB")):
                 problems.append(
                     "JETTAE_LLM_MODE=live requires JETTAE_LLM_BUDGET_DB (shared PostgreSQL "
                     "budget) in prod, so every process reserves against one limit"
                 )
+            p = database_password_problem(e.get("JETTAE_LLM_BUDGET_DB"), "JETTAE_LLM_BUDGET_DB")
+            if p:
+                problems.append(p)
     return problems
 
 
@@ -360,6 +406,7 @@ __all__ = [
     "REPO_ROOT",
     "EnvFileError",
     "Settings",
+    "database_password_problem",
     "environment_problems",
     "env_file_path",
     "get_settings",

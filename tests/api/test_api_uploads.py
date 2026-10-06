@@ -70,7 +70,7 @@ def test_accepted_types_and_filename_sanitising(client, alice):
 
 
 def test_sanitize_filename_unit():
-    assert sanitize_filename("C:\\Users\\x\\정산서.xlsx") == "정산서.xlsx"  # secret-scan: allow
+    assert sanitize_filename("C:\\Users\\x\\정산서.xlsx") == "정산서.xlsx"
     assert sanitize_filename("a\x00b\r\n.csv") == "ab.csv"
     assert sanitize_filename("..") == "upload"
     assert sanitize_filename(None) == "upload"

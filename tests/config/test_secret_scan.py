@@ -77,3 +77,88 @@ def test_history_finds_a_deleted_secret_without_printing_it(
     assert report["summary"]["history_commits"] == 2
     assert {f["rule"] for f in report["findings"]} == {"anthropic-api-key"}
     assert all(f["path"] == "config.py" and f["blob"] for f in report["findings"])
+
+
+# .gitignore entries that are build output or editor state, not data that must never be
+# published; every other entry must also be a scanner path rule
+NOT_SENSITIVE = {
+    "*.py[cod]",
+    ".venv/",
+    "*.egg-info/",
+    "dist/",
+    "build/",
+    ".DS_Store",
+    ".idea/",
+    ".vscode/",
+    "*.tsbuildinfo",
+    "frontend/next-env.d.ts",
+}
+
+
+def _samples(pattern: str) -> list[str]:
+    p = pattern.lstrip("/").replace("*", "x").replace("[cod]", "c")
+    if p.endswith("/"):
+        p += "f"
+    out = [p]
+    if "/" not in pattern.rstrip("/"):
+        out.append("sub/" + p)  # an unanchored pattern also matches below the root
+    return out
+
+
+def test_every_sensitive_gitignore_entry_is_a_path_rule() -> None:
+    scan = _load()
+    lines = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    patterns = [x.strip() for x in lines if x.strip() and not x.startswith(("#", "!"))]
+    assert "llm_cache/" in patterns and ".npmrc" in patterns
+    missing = [
+        sample
+        for pat in patterns
+        if pat not in NOT_SENSITIVE
+        for sample in _samples(pat)
+        if not list(scan.scan_path_name(sample))
+    ]
+    assert missing == []
+
+
+def test_reviewed_forbidden_paths_are_found() -> None:
+    scan = _load()
+    for path in (
+        "llm_cache/ab.json",
+        "llm_replay/x.json",
+        "llm_budget.jsonl",
+        "blobs/ab/cdef",
+        "data/results/ftc_eval.json",
+        "docs/ip/sources/a.pdf",
+        "x.sqlite-journal",
+        "logs/app.txt",
+        ".coverage",
+        "htmlcov/index.html",
+        ".claude/settings.local.json",
+        "CLAUDE.local.md",
+        ".npmrc",
+        "frontend/.npmrc",
+        ".pypirc",
+        ".netrc",
+        ".envrc",
+    ):
+        assert list(scan.scan_path_name(path)), path
+    # tracked files that must stay publishable
+    for path in ("docs/ip/README.md", "frontend/CLAUDE.md", ".env.prod.example", "docs/logs.md"):
+        assert not list(scan.scan_path_name(path)), path
+
+
+def test_a_comment_cannot_exempt_a_line() -> None:
+    scan = _load()
+    token = "ghp_" + secrets.token_hex(20)
+    assert {f.rule for f in scan.scan_text("a.py", f'T = "{token}"\n')} == {"github-token"}
+    marked = f'T = "{token}"  # secret-scan: allow\n'
+    assert {f.rule for f in scan.scan_text("tests/a.py", marked)} == {"github-token"}
+    # the scoped allowlist exempts its one rule, path and line shape only
+    # the source text of tests/api/test_api_uploads.py: doubled backslashes inside a literal
+    win = 'assert sanitize_filename("C:' + "\\\\Users\\\\x\\\\a.xlsx" + '") == "a.xlsx"'
+    assert not list(scan.scan_text("tests/api/test_api_uploads.py", win))
+    assert {f.rule for f in scan.scan_text("tests/api/other.py", win)} == {"personal-path"}
+    leaked = win + f'  # T = "{token}"'
+    assert {f.rule for f in scan.scan_text("tests/api/test_api_uploads.py", leaked)} == {
+        "github-token"
+    }

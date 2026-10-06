@@ -137,13 +137,23 @@ docs/            SPEC.md ARCHITECTURE.md PROGRESS.md ADR/ ip/ runbook.md eval_pr
   `jt_access` (HttpOnly, Lax, `/api`), `jt_refresh` (HttpOnly, Strict, `/api/v1/auth`), `jt_csrf`
   (readable, Lax, `/`); Secure in prod; no tokens in response bodies. One `auth_sessions` row per
   login = refresh family = `sid` claim, checked on every request; refresh rotates, reuse of a rotated
-  token or logout revokes the session. Unsafe cookie requests need `X-CSRF-Token` = `jt_csrf`
+  token or logout revokes the session. Exception: a token rotated less than
+  `JETTAE_REFRESH_REUSE_GRACE_S` (default 20 s) ago in a still-valid session gets a new access cookie
+  only (no refresh cookie, the family is not forked) - browser tabs share one cookie jar and refresh
+  together. `/auth/refresh` is limited per session (`JETTAE_REFRESH_PER_MINUTE`), never per client
+  IP; signup/login use the per-IP limiter. The web client logs the user out only on 401/403 from
+  refresh; 429/5xx/network errors leave the session state `error`. Unsafe cookie requests need `X-CSRF-Token` = `jt_csrf`
   (session-bound HMAC) else 403 `csrf_failed`; Bearer (API token / JWT) requests are exempt. The
   frontend never stores tokens and calls `/api/v1` same-origin through Next.js rewrites.
-- **XLSX limits** (`ingest/xlsx_guard.py`, `XlsxLimits`): zip entry count/size/ratio, DTD refusal and
-  a streaming scan of every worksheet (rows, columns, cells, row elements, rows x columns area,
-  merged ranges and merged area, sheets, shared strings) run before openpyxl touches a cell; the
-  `<dimension>` tag is never trusted. A limit gives `FAILED` with a limit code, a malformed file
+- **XLSX limits** (`ingest/xlsx_guard.py`, `XlsxLimits`): zip entry count/size/ratio, an encoding
+  sniff of every member (XML only as UTF-8 or BOM-marked UTF-16; UTF-16 without BOM, UCS-4, EBCDIC
+  and other declared encodings refused), DTD refusal, and element caps on every part openpyxl
+  parses, chosen the way openpyxl chooses them (content types, workbook relationships, fixed
+  styles/docProps paths, everything reachable from chart sheets), never by root-element name:
+  worksheets (rows, columns, cells, row elements, rows x columns area, merged ranges and area),
+  shared strings (per table and per string), styles (style records), manifest/rels/workbook/other
+  parts (per part and in total). All run before openpyxl touches a cell; the `<dimension>` tag is
+  never trusted. A limit gives `FAILED` with a limit code, a malformed file
   `CORRUPT`, never an empty "no transactions" result.
 - **Agent investigations** (`agents/investigations.py`, `db/repos_investigations.py`,
   `api/routes_investigations.py`, migration 0006): the API creates the `agent_investigations` row
@@ -159,5 +169,14 @@ docs/            SPEC.md ARCHITECTURE.md PROGRESS.md ADR/ ip/ runbook.md eval_pr
 - **Publication** (`scripts/secret_scan.py`, `.gitignore`, `docs/PUBLIC_USE.md`): the publish set
   (`git ls-files` + untracked, not ignored) and every blob reachable from any ref are scanned for key
   formats, secret assignments, URL credentials, personal absolute paths and forbidden paths (env
-  files, databases, logs, caches, `var/`, `data/raw/`). Findings print rule, path and line only.
+  files, databases, logs, caches, `var/`, blob store, LLM replay cache and budget ledger,
+  `data/raw/`, `data/results/`, downloaded prior-art PDFs, per-user tool settings; a test checks
+  that every sensitive `.gitignore` entry is a path rule). Exceptions only through `ALLOWLIST`
+  (one rule, one path, one line shape); no inline marker. Findings print rule, path and line only.
+- **Hermetic tests** (`tests/_plugins/jettae_testenv.py`, loaded by `-p` in `pyproject.toml`):
+  removes `JETTAE_*` (except `JETTAE_TEST_PG_URL`), `ANTHROPIC_*`, `OPENAI_*` and points
+  `JETTAE_ENV_FILE` at an empty file before collection, so a shell prepared for live LLM calls or
+  a `./.env` cannot change test results or expose keys to tests.
+- **Line endings** (`.gitattributes`): text files are LF on every OS, so evaluation provenance
+  hashes (seeds, engine sources) are the same in a Windows checkout; evaluation writers write LF.
 

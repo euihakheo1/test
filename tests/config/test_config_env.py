@@ -4,6 +4,7 @@ startup requirements of :func:`jettae.config.require_valid_environment`."""
 from __future__ import annotations
 
 import os
+import secrets
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -78,7 +79,7 @@ def test_dev_and_test_have_no_prod_requirements(env, name):
 
 # ------------------------------------------------------------------ prod requirements
 def test_complete_prod_configuration_passes(env):
-    _prod(JETTAE_DRF_OC="my-own-oc")  # secret-scan: allow (test value)
+    _prod(JETTAE_DRF_OC="own" + secrets.token_hex(4))  # not the sample key "test"
     for comp in ("api", "worker", "mcp", "db", "sources"):
         st = require_valid_environment(comp)
         assert st.is_prod and st.secure_cookies
@@ -267,3 +268,55 @@ def test_api_factory_refuses_prod_without_secret(env):
     with pytest.raises(SystemExit) as e:
         app_factory()
     assert "JETTAE_JWT_SECRET" in str(e.value)
+
+
+# ------------------------------------------------------------------ non-finite budgets, DB password
+@pytest.mark.parametrize("raw", ["Infinity", "inf", "1e400", "NaN", "-5", "abc"])
+def test_prod_live_budget_must_be_finite_and_positive(env, raw):
+    # float("1e400") is inf and float("Infinity") > 0; an unlimited budget is no limit
+    _prod(JETTAE_LLM_MODE="live", JETTAE_LLM_BUDGET_KRW=raw, JETTAE_LLM_BUDGET_DB=PG)
+    for comp in ("api", "worker", "mcp"):
+        with pytest.raises(SystemExit) as e:
+            require_valid_environment(comp)
+        assert "JETTAE_LLM_BUDGET_KRW > 0" in str(e.value)
+
+
+@pytest.mark.parametrize("raw", ["Infinity", "inf", "1e400", "NaN", "-1"])
+def test_gateway_and_budget_refuse_unbounded_limits(raw):
+    from decimal import Decimal, InvalidOperation
+
+    from jettae.llm.base import LLMError
+    from jettae.llm.budget import Budget
+    from jettae.llm.gateway import gateway_from_env
+
+    env = {"JETTAE_LLM_MODE": "live", "JETTAE_LLM_BUDGET_KRW": raw}
+    with pytest.raises(LLMError):
+        gateway_from_env(env)
+    try:
+        limit = Decimal(raw)
+    except InvalidOperation:
+        return
+    with pytest.raises(LLMError):
+        Budget(limit)
+
+
+def test_prod_rejects_placeholder_database_password(env):
+    _prod(JETTAE_DATABASE_URL="postgresql+psycopg://jettae:change-me-db-password@db:5432/j")
+    for comp in ("api", "worker", "mcp", "db"):
+        with pytest.raises(SystemExit) as e:
+            require_valid_environment(comp)
+        msg = str(e.value)
+        assert "JETTAE_DATABASE_URL contains a placeholder password" in msg
+        assert "change-me-db-password" not in msg  # never echo the value
+    real = secrets.token_urlsafe(24)
+    _prod(JETTAE_DATABASE_URL="postgresql+psycopg://jettae:" + real + "@db:5432/j")
+    assert require_valid_environment("db").is_prod
+    # the shared LLM budget database is checked the same way
+    _prod(
+        JETTAE_LLM_MODE="live",
+        JETTAE_LLM_BUDGET_KRW="5000",
+        JETTAE_LLM_BUDGET_DB="postgresql+psycopg://jettae:example-pass@db:5432/j",
+    )
+    with pytest.raises(SystemExit) as e:
+        require_valid_environment("worker")
+    assert "JETTAE_LLM_BUDGET_DB contains a placeholder password" in str(e.value)

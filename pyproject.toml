@@ -56,7 +56,9 @@ packages = ["src/jettae"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+# jettae_testenv: drop JETTAE_*/provider variables and any .env before collection (hermetic runs)
+pythonpath = ["tests/_plugins"]
+addopts = "-ra -p jettae_testenv"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 

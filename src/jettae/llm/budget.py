@@ -169,6 +169,20 @@ def estimate_max_input_tokens(request: LLMRequest, image_tokens: int = DEFAULT_I
 DEFAULT_RESERVATION_TTL_S = 900.0
 
 
+# Upper bound for a configured budget (10 billion KRW). Decimal("1e400") is finite but is no
+# limit in practice; a value above this is a typo or an attempt at an unlimited budget.
+MAX_BUDGET_KRW = Decimal("10000000000")
+
+
+def budget_limit_problem(limit: Decimal) -> str | None:
+    """Why ``limit`` cannot be a budget cap, or None (0 is valid: no paid call possible)."""
+    if not limit.is_finite() or limit < 0:
+        return "must be a finite number >= 0 KRW"
+    if limit > MAX_BUDGET_KRW:
+        return f"must not exceed {MAX_BUDGET_KRW} KRW"
+    return None
+
+
 class Budget:
     """KRW budget whose state lives in a shared :class:`~jettae.llm.budget_store.BudgetStore`.
 
@@ -194,7 +208,13 @@ class Budget:
         reservation_ttl_s: float = DEFAULT_RESERVATION_TTL_S,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        self.limit_krw = Decimal(limit_krw)
+        limit = Decimal(limit_krw)
+        problem = budget_limit_problem(limit)
+        if problem:
+            # Infinity would make reserve() never refuse: an "unlimited" budget must not
+            # satisfy the rule that paid calls need a positive, bounded cap
+            raise LLMError(f"the LLM budget {problem}")
+        self.limit_krw = limit
         self.ledger_path = Path(ledger_path) if ledger_path is not None else None
         if store is None:
             store = (

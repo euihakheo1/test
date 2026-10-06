@@ -35,7 +35,9 @@ router = APIRouter(prefix="/auth", tags=["auth"], responses=ERROR_RESPONSES)
 
 
 def ip_throttle(request: Request) -> None:
-    """Per-client-IP request limit for unauthenticated auth endpoints (429 + Retry-After)."""
+    """Per-client-IP request limit for signup and login (429 + Retry-After). The client IP is
+    the proxy-resolved peer (uvicorn ``FORWARDED_ALLOW_IPS``); behind an untrusted proxy all
+    clients share one key, which is why refresh is not limited here."""
     limiter = getattr(request.app.state, "auth_ip_limiter", None)
     if limiter is not None:
         host = request.client.host if request.client else "unknown"
@@ -73,10 +75,12 @@ def login(body: LoginRequest, auth: AuthDep, response: Response) -> SessionRespo
     return _start_session(auth.login(body.email, body.password, body.tenant_id), auth, response)
 
 
-@router.post("/refresh", response_model=SessionResponse, dependencies=Throttled)
+@router.post("/refresh", response_model=SessionResponse)
 def refresh(request: Request, auth: AuthDep, response: Response) -> SessionResponse:
     """Rotate the refresh cookie. Requires ``X-CSRF-Token``. Presenting an already rotated
-    refresh token ends the whole session (reuse is treated as theft)."""
+    refresh token ends the whole session (reuse is treated as theft), except within
+    ``refresh_reuse_grace_s`` of its rotation, which gets a new access cookie only.
+    Limited per session, never per client IP (see ``Settings.refresh_per_minute``)."""
     token = request.cookies.get(REFRESH_COOKIE)
     if not token:
         raise ApiError(401, "invalid_refresh_token", "no refresh cookie")
@@ -84,6 +88,9 @@ def refresh(request: Request, auth: AuthDep, response: Response) -> SessionRespo
     if sid is None:
         raise ApiError(401, "invalid_refresh_token", "invalid refresh token")
     require_csrf(request, auth, sid)
+    limiter = getattr(request.app.state, "refresh_limiter", None)
+    if limiter is not None:
+        limiter.hit(f"session:{sid}")
     pair = auth.refresh(token)
     set_session_cookies(response, auth.settings, pair, None)
     return _session_body(pair, auth)

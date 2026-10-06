@@ -48,6 +48,8 @@ def set_session_cookies(
     response: Response, settings: Settings, pair: TokenPair, csrf: str | None
 ) -> None:
     """Set the access and refresh cookies (and the CSRF cookie when ``csrf`` is given).
+    A pair without a refresh token (refresh-reuse grace) leaves the refresh cookie alone: the
+    browser already holds the successor set by the overlapping request.
 
     The CSRF cookie lives as long as the session; it is only replaced at login/signup, so
     requests already in flight with the previous header value keep matching after a refresh.
@@ -62,15 +64,16 @@ def set_session_cookies(
         httponly=True,
         samesite="lax",
     )
-    response.set_cookie(
-        REFRESH_COOKIE,
-        pair.refresh_token,
-        max_age=pair.refresh_expires_in or settings.refresh_token_ttl_s,
-        path=REFRESH_PATH,
-        secure=secure,
-        httponly=True,
-        samesite="strict",
-    )
+    if pair.refresh_token:
+        response.set_cookie(
+            REFRESH_COOKIE,
+            pair.refresh_token,
+            max_age=pair.refresh_expires_in or settings.refresh_token_ttl_s,
+            path=REFRESH_PATH,
+            secure=secure,
+            httponly=True,
+            samesite="strict",
+        )
     if csrf is not None:
         response.set_cookie(
             CSRF_COOKIE,

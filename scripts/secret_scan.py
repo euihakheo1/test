@@ -74,24 +74,68 @@ ASSIGNMENT = re.compile(
 )
 URL_CREDENTIAL = re.compile(r"\b[a-z][a-z0-9+.\-]*://[^\s/:@\"']+:(?P<pw>[^\s/@\"']{3,})@")
 
-# Paths that must never be published, whatever their content.
+# Paths that must never be published, whatever their content. They mirror every runtime,
+# user-data, secret and cache entry of .gitignore (tests/config/test_secret_scan.py checks
+# that each such .gitignore entry yields a finding), so `git add -f` or a later .gitignore
+# edit cannot publish one of them silently.
 PATH_RULES: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("env-file", re.compile(r"(^|/)\.env(\.[^/]*)?$")),
-    ("database-file", re.compile(r"\.(db|sqlite|sqlite3|db-journal|db-wal|db-shm|dump)$")),
-    ("log-file", re.compile(r"\.log$")),
+    (
+        "database-file",
+        re.compile(r"\.(db|sqlite|sqlite3|db-journal|db-wal|db-shm|sqlite-journal|dump)$"),
+    ),
+    ("log-file", re.compile(r"\.log$|(^|/)logs/")),
     ("key-file", re.compile(r"\.(pem|key|p12|pfx)$")),
-    ("runtime-dir", re.compile(r"(^|/)var/")),
-    ("raw-download", re.compile(r"^data/raw/")),
+    # local runtime state: uploads (blob store), DB, demo files
+    ("runtime-dir", re.compile(r"(^|/)(var|blobs)/")),
+    # LLM replay cache (holds company data sent to a model) and the budget ledger
+    ("llm-cache", re.compile(r"(^|/)(llm_cache|llm_replay)/|(^|/)llm_budget\.jsonl$")),
+    ("raw-download", re.compile(r"^data/raw/|^docs/ip/sources/[^/]*\.pdf$")),
+    ("eval-results", re.compile(r"^data/results/")),
     (
         "cache-dir",
         re.compile(
             r"(^|/)(\.mypy_cache|\.pytest_cache|\.ruff_cache|\.hypothesis|"
             r"__pycache__|node_modules|\.next|\.e2e-tmp|test-results|"
-            r"playwright-report)/"
+            r"playwright-report|htmlcov|coverage)/"
+        ),
+    ),
+    ("coverage-data", re.compile(r"(^|/)\.coverage(\.[^/]*)?$|(^|/)coverage\.xml$")),
+    # per-user tool settings that can hold credentials or machine-specific paths
+    (
+        "local-config",
+        re.compile(
+            r"(^|/)(\.npmrc|\.pypirc|\.netrc|\.envrc|CLAUDE\.local\.md)$"
+            r"|(^|/)\.claude/settings\.local\.json$"
         ),
     ),
 )
 ALLOWED_ENV_EXAMPLES = re.compile(r"(^|/)\.env(\.[a-z0-9-]+)?\.example$")
+
+# Exceptions for hand-written test inputs only, each scoped to one rule, one path and one line
+# shape (like .gitleaks.toml): a real key on any other line or in any other file is still
+# reported. There is no inline marker; a comment cannot exempt a line. The entries also cover
+# the same lines in earlier commits, which the history scan reads.
+ALLOWLIST: tuple[tuple[str, re.Pattern[str], re.Pattern[str]], ...] = (
+    # a Windows upload path whose directory part the sanitiser must drop
+    (
+        "personal-path",
+        re.compile(r"^tests/api/test_api_uploads\.py$"),
+        re.compile(r'^\s*assert sanitize_filename\("C:(\\\\)Users\1x\1[^"\\/]*"\) == "[^"]*"'),
+    ),
+    # a non-sample DRF OC value for the prod startup check (no real law.go.kr key)
+    (
+        "secret-assignment",
+        re.compile(r"^tests/config/test_config_env\.py$"),
+        re.compile(r'^\s*_prod\(JETTAE_DRF_OC="[A-Za-z0-9-]{1,16}"\)'),
+    ),
+    # a strong-looking JWT secret for the prod example test (commits up to f0e66c0)
+    (
+        "secret-assignment",
+        re.compile(r"^tests/config/test_env_examples\.py$"),
+        re.compile(r'^\s*os\.environ\["JETTAE_JWT_SECRET"\] = "[A-Za-z0-9-]{32,40}"'),
+    ),
+)
 
 # Personal absolute paths (Windows user profile, macOS/Linux home directories).
 PERSONAL_PATH = re.compile(
@@ -112,10 +156,19 @@ def _is_placeholder(value: str) -> bool:
     return bool(PLACEHOLDER.search(value)) or len(set(value)) < 6
 
 
+def _allowed(rule: str, path: str, line: str) -> bool:
+    return any(r == rule and p.search(path) and shape.search(line) for r, p, shape in ALLOWLIST)
+
+
 def scan_text(path: str, text: str, blob: str | None = None) -> Iterator[Finding]:
-    for no, line in enumerate(text.splitlines(), start=1):
-        if "secret-scan: allow" in line:
-            continue
+    lines = text.splitlines()
+    for f in _scan_lines(path, lines, blob):
+        if not _allowed(f.rule, path, lines[f.line - 1] if f.line else ""):
+            yield f
+
+
+def _scan_lines(path: str, lines: list[str], blob: str | None) -> Iterator[Finding]:
+    for no, line in enumerate(lines, start=1):
         for rule, pat in CONTENT_RULES:
             m = pat.search(line)
             if m and not _is_placeholder(m.group(0)):

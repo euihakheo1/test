@@ -119,6 +119,7 @@ def test_concurrent_refresh_of_one_token_yields_at_most_one_new_token(client, rt
     signup(client, "race@x.example", "Race")
     cookies = _login(client, "race@x.example")
     results: list[int] = []
+    rotations: list[str] = []
     barrier = threading.Barrier(4)
     # one TestClient per thread: a shared cookie jar would mix the threads' cookies
     clients = [make_client(rt) for _ in range(4)]
@@ -127,13 +128,17 @@ def test_concurrent_refresh_of_one_token_yields_at_most_one_new_token(client, rt
         barrier.wait()
         r = c.post(f"{API}/auth/refresh", headers=cookie_header(cookies))
         results.append(r.status_code)
+        if r.cookies.get("jt_refresh"):
+            rotations.append(r.cookies["jt_refresh"])
 
     ts = [threading.Thread(target=go, args=(c,)) for c in clients]
     for t in ts:
         t.start()
     for t in ts:
         t.join()
-    assert results.count(200) <= 1
+    # the family never forks: one new refresh token at most; the overlapping requests get
+    # an access cookie only (reuse grace) or 401
+    assert len(rotations) <= 1
     assert all(code in (200, 401) for code in results)
 
 

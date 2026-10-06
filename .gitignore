@@ -70,6 +70,14 @@ frontend/playwright-report/
 frontend/.e2e-tmp/
 *.tsbuildinfo
 
+# per-user tool settings: may hold registry/PyPI/host credentials, agent memory or local paths
+.npmrc
+.pypirc
+.netrc
+.envrc
+.claude/settings.local.json
+CLAUDE.local.md
+
 # editors / OS
 .DS_Store
 Thumbs.db

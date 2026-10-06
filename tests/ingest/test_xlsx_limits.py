@@ -218,3 +218,161 @@ def test_damage_found_while_streaming_cells_is_corrupt():
     content = _workbook(_sheet('<row r="1"><c r="A1" t="s"><v>7</v></c></row>'))
     doc = safe_parse(content, "lazy.xlsx")
     assert doc.status is DocumentStatus.CORRUPT and not doc.tables
+
+
+# ------------------------------------------------------------------ parts found like openpyxl
+# openpyxl finds the workbook and shared-string parts through content types and
+# relationships, never through the root element's name, and libxml2/expat read UTF-16
+# without a byte order mark. The guard must bound the same parts in the same decoding.
+SST_CT = "application/vnd.openxmlformats-officedocument.spreadsheetml.sharedStrings+xml"
+
+
+def _with_shared_strings(sst_xml: bytes) -> bytes:
+    src = zipfile.ZipFile(io.BytesIO(_base()))
+    ct = src.read("[Content_Types].xml").decode()
+    ct = ct.replace(
+        "</Types>", f'<Override PartName="/xl/sharedStrings.xml" ContentType="{SST_CT}"/></Types>'
+    )
+    sheet = _sheet('<row r="1"><c r="A1" t="s"><v>0</v></c></row>')
+    return _replace(
+        _base(),
+        {"[Content_Types].xml": ct.encode(), SHEET: sheet, "xl/sharedStrings.xml": sst_xml},
+    )
+
+
+def _sst(root: str, n: int, *, decl: str = "UTF-8") -> str:
+    items = "".join(f"<si><t>s{i}</t></si>" for i in range(n))
+    return f'<?xml version="1.0" encoding="{decl}"?><{root} xmlns="{NS}">{items}</{root}>'
+
+
+def test_shared_string_cap_holds_when_the_root_element_is_renamed(no_openpyxl):
+    small = XlsxLimits(max_shared_strings=100)
+    _rejected(_with_shared_strings(_sst("sst", 500).encode()), "shared_strings", xlsx_limits=small)
+    renamed = _with_shared_strings(_sst("sstX", 500).encode())
+    _rejected(renamed, "shared_strings", xlsx_limits=small)
+
+
+def test_one_shared_string_with_too_many_runs(no_openpyxl):
+    runs = "".join(f"<r><t>{i}</t></r>" for i in range(600))
+    sst = f'<sst xmlns="{NS}"><si>{runs}</si></sst>'.encode()
+    small = XlsxLimits(max_string_elements=500)
+    _rejected(_with_shared_strings(sst), "shared_strings", xlsx_limits=small)
+
+
+def test_utf16_without_bom_is_refused_but_with_bom_is_read():
+    no_bom = _sst("sst", 3, decl="UTF-16").encode("utf-16-le")
+    _rejected(_with_shared_strings(no_bom), "xml_encoding")
+    no_bom_be = _sst("sst", 3, decl="UTF-16").encode("utf-16-be")
+    _rejected(_with_shared_strings(no_bom_be), "xml_encoding")
+    # UTF-16 with a byte order mark is valid OOXML and both parsers agree on it
+    with_bom = _sst("sst", 3, decl="UTF-16").encode("utf-16")
+    doc = parse_xlsx(_with_shared_strings(with_bom))
+    assert doc.tables[0].rows[0].cells[0].text == "s0"
+
+
+def test_dtd_is_refused_in_every_decoding(no_openpyxl):
+    body = (
+        '<!DOCTYPE sst [<!ENTITY a "aaaaaaaaaa"><!ENTITY b "&a;&a;&a;&a;&a;">]>'
+        f'<sst xmlns="{NS}"><si><t>&b;</t></si></sst>'
+    )
+    decl = '<?xml version="1.0" encoding="UTF-16"?>'
+    _rejected(_with_shared_strings((decl + body).encode("utf-16")), "xml_dtd")
+    _rejected(_with_shared_strings((decl + body).encode("utf-16-le")), "xml_encoding")
+    _rejected(_with_shared_strings(("\n  " + decl + body).encode("utf-16-le")), "xml_encoding")
+
+
+def test_declared_encodings_other_than_utf8_are_refused(no_openpyxl):
+    sst = f'<sst xmlns="{NS}"><si><t>a</t></si></sst>'
+    latin = '<?xml version="1.0" encoding="ISO-8859-1"?>' + sst
+    _rejected(_with_shared_strings(latin.encode("latin-1")), "xml_encoding")
+    utf7 = '<?xml version="1.0" encoding="UTF-7"?>' + sst
+    _rejected(_with_shared_strings(utf7.encode()), "xml_encoding")
+
+
+def test_sheet_entry_cap_holds_when_the_workbook_root_is_renamed(no_openpyxl):
+    src = zipfile.ZipFile(io.BytesIO(_base()))
+    wbxml = src.read("xl/workbook.xml").decode()
+    extra = "".join(
+        f'<sheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+        f' name="S{i}" sheetId="{i + 10}" r:id="rId1"/>'
+        for i in range(60)
+    )
+    wbxml = wbxml.replace("</sheets>", extra + "</sheets>")
+    wbxml = wbxml.replace("<workbook ", "<workbookX ").replace("</workbook>", "</workbookX>")
+    assert "<workbookX " in wbxml
+    _rejected(_replace(_base(), {"xl/workbook.xml": wbxml.encode()}), "sheets")
+
+
+def test_styles_bomb_is_rejected_before_openpyxl(no_openpyxl):
+    xf = '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'
+    styles = (
+        f'<styleSheet xmlns="{NS}"><fonts count="1"><font/></fonts>'
+        f'<cellXfs count="3000">{xf * 3000}</cellXfs></styleSheet>'
+    ).encode()
+    content = _replace(_base(), {"xl/styles.xml": styles})
+    _rejected(content, "styles", xlsx_limits=XlsxLimits(max_style_records=1000))
+    # default caps: a 0.1 MiB upload with 200 000 <xf> took seconds and hundreds of MiB
+    # varied ids keep the compression ratio realistic, so only the style cap can stop it
+    xfs = "".join(f'<xf numFmtId="{i % 200}" fontId="{i % 7}"/>' for i in range(200_000))
+    bomb = f'<styleSheet xmlns="{NS}"><cellXfs>{xfs}</cellXfs></styleSheet>'.encode()
+    content = _replace(_base(), {"xl/styles.xml": bomb})
+    assert len(content) < 1024 * 1024
+    _rejected(content, "styles")
+
+
+def test_manifest_and_relationship_parts_have_element_caps(no_openpyxl):
+    src = zipfile.ZipFile(io.BytesIO(_base()))
+    ct = src.read("[Content_Types].xml").decode()
+    filler = "".join(
+        f'<Override PartName="/x/{i}.xml" ContentType="application/xml"/>' for i in range(400)
+    )
+    small = XlsxLimits(max_part_elements=300)
+    big_ct = ct.replace("</Types>", filler + "</Types>").encode()
+    _rejected(_replace(_base(), {"[Content_Types].xml": big_ct}), "xml_elements", xlsx_limits=small)
+    rel = (
+        '<Relationship Id="h{0}" TargetMode="External" Target="https://example.invalid/{0}"'
+        ' Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink"/>'
+    )
+    rels = (
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        + "".join(rel.format(i) for i in range(400))
+        + "</Relationships>"
+    ).encode()
+    # openpyxl parses each sheet's relationships even in read-only mode
+    sheet_rels = _replace(_base(), {"xl/worksheets/_rels/sheet1.xml.rels": rels})
+    _rejected(sheet_rels, "xml_elements", xlsx_limits=small)
+
+
+def test_part_openpyxl_parses_but_is_not_xml_fails_closed(no_openpyxl):
+    with pytest.raises(CorruptFile):
+        parse_xlsx(_replace(_base(), {"xl/styles.xml": b"\x89PNG\r\n\x1a\n" + b"\x00" * 64}))
+
+
+def test_binary_members_with_leading_nul_bytes_are_not_mistaken_for_xml():
+    # EMF images start with 01 00 00 00; they are opened, never parsed as XML
+    emf = b"\x01\x00\x00\x00" + bytes(range(256)) * 4
+    doc = parse_xlsx(_replace(_base(), {"xl/media/image1.emf": emf}))
+    assert doc.tables[0].rows[0].cells[0].text == "x"
+
+
+def test_workbook_with_chart_sheet_and_number_formats_still_parses():
+    from openpyxl.chart import BarChart, Reference
+
+    from jettae.ingest.xlsx_guard import inspect_xlsx
+
+    wb = Workbook()
+    ws = wb.active
+    for r in range(1, 6):
+        ws.cell(r, 1, r * 1000).number_format = "#,##0"
+    chart = BarChart()
+    chart.add_data(Reference(ws, min_col=1, min_row=1, max_row=5))
+    wb.create_chartsheet("chart").add_chart(chart)
+    buf = io.BytesIO()
+    wb.save(buf)
+    content = buf.getvalue()
+    assert any(n.startswith("xl/charts/") for n in zipfile.ZipFile(buf).namelist())
+    scan = inspect_xlsx(content, XlsxLimits())
+    assert scan.aux_elements > 0 and len(scan.sheets) == 1
+    doc = parse_xlsx(content)
+    assert [t.name for t in doc.tables] == [ws.title]
+    assert doc.tables[0].rows[4].cells[0].raw == 5000

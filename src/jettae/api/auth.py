@@ -325,6 +325,9 @@ class AuthService:
             if row is None:
                 raise ApiError(401, "invalid_refresh_token", "invalid refresh token")
             if row.revoked_at is not None:
+                grace = self._grace_access(s, row, now)
+                if grace is not None:
+                    return grace
                 # Reuse of a rotated (or logged-out) token: assume theft and end the whole
                 # session, including access tokens already issued in it (committed).
                 self._revoke_family(s, row.family_id, "refresh_reuse")
@@ -372,8 +375,50 @@ class AuthService:
                 return pair
         if lost_race:
             with self.db.write() as s:
+                # the concurrent rotation that won has committed by now (row lock released)
+                lost = s.scalars(
+                    sa.select(RefreshTokenRow).where(RefreshTokenRow.token_hash == h)
+                ).first()
+                grace = self._grace_access(s, lost, now) if lost is not None else None
+                if grace is not None:
+                    return grace
                 self._revoke_family(s, family_id, "refresh_reuse")
         raise ApiError(401, "refresh_token_reused", "refresh token already used")
+
+    def _grace_access(self, s: Any, row: RefreshTokenRow, now: datetime) -> TokenPair | None:
+        """A new access token (no refresh token) for a refresh token rotated less than
+        ``refresh_reuse_grace_s`` ago in a session that is still valid, else None.
+
+        Why: browser tabs share one cookie jar, so when their common access cookie expires
+        they can send the same refresh cookie before the first response's Set-Cookie lands.
+        Treating the second as theft would sign the user out everywhere. The successor
+        refresh token is not returned (only its hash is stored) and not re-issued, so the
+        family stays linear. Reuse after the window, or of a token revoked by logout or
+        reuse detection (no successor, or the session already ended), still ends the
+        session. The request already passed the session-bound CSRF check."""
+        grace = self.settings.refresh_reuse_grace_s
+        if grace <= 0 or row.revoked_at is None or row.replaced_by is None:
+            return None
+        if now - row.revoked_at > timedelta(seconds=grace):
+            return None
+        session = s.get(AuthSessionRow, row.family_id)
+        if session is None or session.revoked_at is not None or session.expires_at <= now:
+            return None
+        m = self._membership(s, row.user_id, row.tenant_id)
+        if m is None:
+            return None
+        user = s.get(UserRow, row.user_id)
+        return TokenPair(
+            access_token=self._access_token(row.user_id, row.tenant_id, m.role, session.id),
+            refresh_token="",
+            expires_in=self.settings.access_token_ttl_s,
+            tenant_id=row.tenant_id,
+            role=m.role,
+            user_id=row.user_id,
+            email=user.email if user is not None else "",
+            session_id=session.id,
+            session_expires_at=session.expires_at,
+        )
 
     def logout(self, refresh_token: str) -> None:
         """End the session the refresh token belongs to (all its refresh and access tokens)."""

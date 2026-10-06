@@ -76,3 +76,21 @@ modified by the audit.
   not built or scanned, Docker is not available on the development machine).
 - GitHub Actions used by `.github/workflows/ci.yml` (pinned to major versions, not to commit SHAs).
 - Licence compliance of dependencies (see `docs/PUBLIC_USE.md`).
+
+## 2026-10-07 (re-run for the review-fix commit)
+
+Same machine and tools (uv 0.12.23, pip-audit 2.10.1 through `uv tool run`, Node.js 24.16.0,
+npm 11.13.0). `uv.lock` and `frontend/package-lock.json` were not changed by the review fixes.
+
+| Check | Command | Result |
+|---|---|---|
+| Python, PyPI advisory DB | `uv export --frozen --all-extras --no-emit-project --format requirements-txt -o "$TMPDIR/req-all.txt"` then `uvx pip-audit -r "$TMPDIR/req-all.txt" --no-deps --disable-pip` | 107 pinned packages, "No known vulnerabilities found", exit 0 |
+| Python, OSV | same with `-s osv` | "No known vulnerabilities found", exit 0 |
+| npm, production deps | `npm audit --omit=dev` (in `frontend/`) | "found 0 vulnerabilities", exit 0 |
+| npm, all deps | `npm audit` | 5 high, exit 1: the same `braces` advisory GHSA-vfj7-8cjw-p6xm through `eslint-config-next@16.3.8` (dev-only lint chain); npm still offers only `eslint-config-next@14.2.35` (breaking downgrade). Decision unchanged: **deferred** (see the 2026-10-06 section) |
+
+The earlier section reports 105 packages; this export has 107 `name==version` lines
+(`grep -cE '^[A-Za-z0-9_.-]+==' req-all.txt`). `uv.lock` is unchanged since the first commit; the
+cause of the difference (counting method or the earlier working tree) was not investigated.
+Nothing was changed because of this audit.
+

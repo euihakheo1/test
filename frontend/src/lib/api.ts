@@ -719,25 +719,39 @@ function send(path: string, init: { method: string; headers?: Record<string, str
   });
 }
 
-let refreshing: Promise<boolean> | null = null;
+/**
+ * refresh 결과. "ended" 는 서버가 세션이 끝났다고 답한 경우(401/403)뿐이다. 429·5xx·네트워크 오류는
+ * "unavailable": 서버가 지금 답하지 못한 것이지 로그인이 끝난 것이 아니다. 이때 로그인 상태를 지우면
+ * 다른 사람의 로그인 시도로 걸린 속도 제한이나 잠깐의 서버 오류만으로 사용자가 화면에서 로그아웃된다.
+ */
+type RefreshOutcome =
+  | { kind: "refreshed" }
+  | { kind: "ended" }
+  | { kind: "unavailable"; status: number; requestId: string | null; network: boolean };
+
+let refreshing: Promise<RefreshOutcome> | null = null;
 
 /**
  * refresh 쿠키로 새 access 쿠키를 받는다. 동시에 401 을 받은 요청들이 refresh 를 여러 번 보내면
- * 서버가 회전된 refresh 토큰의 재사용으로 보고 토큰 묶음 전체를 폐기하므로, 한 번의 요청을 공유한다.
- * 401/403 이면 로그인 상태를 지운다. 네트워크 오류는 로그인 여부를 모르는 것이므로 지우지 않는다.
+ * 서버가 회전된 refresh 토큰의 재사용으로 볼 수 있으므로 한 화면(JS 컨텍스트) 안에서는 한 번의 요청을
+ * 공유한다. 여러 탭이 거의 동시에 보내는 경우는 서버의 짧은 재사용 유예(JETTAE_REFRESH_REUSE_GRACE_S)가
+ * 받는다. 401/403 이면 로그인 상태를 지우고, 그 밖의 실패는 상태를 "error" 로 둔다.
  */
-function tryRefresh(): Promise<boolean> {
+function tryRefresh(): Promise<RefreshOutcome> {
   if (!refreshing) {
-    refreshing = (async () => {
+    refreshing = (async (): Promise<RefreshOutcome> => {
       try {
         const res = await send("/auth/refresh", { method: "POST" });
-        if (!res.ok) {
+        if (res.ok) return { kind: "refreshed" };
+        if (res.status === 401 || res.status === 403) {
           clearSession();
-          return false;
+          return { kind: "ended" };
         }
-        return true;
+        setSessionError();
+        return { kind: "unavailable", status: res.status, requestId: res.headers.get("x-request-id"), network: false };
       } catch {
-        return false;
+        setSessionError();
+        return { kind: "unavailable", status: 0, requestId: null, network: true };
       } finally {
         refreshing = null;
       }
@@ -773,7 +787,19 @@ async function raw(path: string, o: ReqOpts = {}, retried = false): Promise<Resp
   }
   if (res.status === 401 && auth && !retried && !NO_REFRESH.has(path)) {
     // 재시도는 한 번뿐이다. refresh 뒤에도 401 이면 그대로 오류로 돌려준다(무한 반복 방지).
-    if (await tryRefresh()) return raw(path, o, true);
+    const outcome = await tryRefresh();
+    if (outcome.kind === "refreshed") return raw(path, o, true);
+    if (outcome.kind === "unavailable") {
+      // 로그인 여부를 모르는 상태: 401 로 돌려주면 호출한 쪽이 로그아웃으로 처리한다
+      throw new ApiError(
+        outcome.status,
+        "session_unavailable",
+        "로그인 상태를 지금 확인하지 못했습니다. 잠시 후 다시 시도하세요",
+        null,
+        outcome.requestId,
+        outcome.network ? "network" : "http",
+      );
+    }
   }
   if (res.status === 401 && auth) clearSession();
   if (!res.ok) throw await toError(res);

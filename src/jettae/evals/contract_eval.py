@@ -30,6 +30,16 @@ from jettae.sources.contract.textx import UnsupportedDocument, read_document
 
 RULE_FOR = {"direct": RULE_DIRECT, "consignment": RULE_CONSIGNMENT}
 CMD = "uv run jettae sources law contract-extract"
+EVAL_CMD = "uv run jettae eval contract"
+# The downloaded forms are not published (data/raw/). Without them a run would replace the
+# reviewed summary in docs/eval_results.md with "failed" rows, so it refuses instead.
+MISSING_INPUT = ("file_missing", "hash_mismatch")
+
+
+class ContractInputsMissing(FileNotFoundError):
+    """Downloaded contract files recorded in the manifest are absent or differ on disk."""
+
+
 # broader keyword filter used only as a coverage self-check (not a gold standard)
 BROAD_TERM = re.compile(r"일\s*(?:이내|안에|내에|까지)")
 BROAD_PAY = re.compile(r"지급|대금")
@@ -162,18 +172,27 @@ def evaluate_documents(docs: list[dict[str, Any]], root: Path | None = None) -> 
     }
 
 
-def run(out: Path | None = None, md: Path | None = None) -> dict[str, Any]:
+def run(out: Path | None = None, md: Path | None = None, *, command: str = CMD) -> dict[str, Any]:
+    """Evaluate and write ``data/results/contract_eval.json`` and the E5 block. Raises
+    :class:`ContractInputsMissing` (nothing written) when a downloaded form is not on disk."""
     m = ftc_board.load_manifest()
     if m is None:
         raise FileNotFoundError(
             "data/manifests/contract.json missing: run `uv run jettae sources law contract-fetch`"
         )
     res = evaluate_documents(m.get("documents", []))
+    missing = [r for r in res["documents"] if r.get("status") in MISSING_INPUT]
+    if missing:
+        raise ContractInputsMissing(
+            f"{len(missing)} of {len(res['documents'])} contract files are not on disk or differ "
+            "from data/manifests/contract.json; run `uv run jettae sources law contract-fetch` "
+            "first (docs/eval_results.md was not changed)"
+        )
     res["run"] = {
         "at": utc_now_iso(),
         "manifest": "data/manifests/contract.json",
         "manifest_fetched_at": m.get("fetched_at"),
-        "command": CMD,
+        "command": command,
     }
     write_json(out or results_dir() / "contract_eval.json", res)
     upsert_md_section(md or eval_results_md(), "E5", render_md(res))
@@ -229,7 +248,7 @@ def render_md(res: dict[str, Any]) -> str:
 def run_cli() -> None:
     """E5: 공정위 표준거래계약서에서 지급기한·기산점 조항 추출(원문 위치 포함)."""
     try:
-        res = run()
+        res = run(command=EVAL_CMD)
     except FileNotFoundError as e:
         print(e)
         raise SystemExit(3) from None

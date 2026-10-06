@@ -20,7 +20,7 @@ import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Protocol
@@ -48,6 +48,7 @@ from jettae.llm.budget import (
     Budget,
     ModelPrice,
     PriceTable,
+    budget_limit_problem,
     max_cost_krw,
 )
 from jettae.llm.budget_store import SqlBudgetStore
@@ -355,8 +356,17 @@ class LLMGateway:
 
 # ----------------------------------------------------------------------------- from env
 def _env_decimal(env: Mapping[str, str], name: str, default: str = "0") -> Decimal:
+    """A bounded, non-negative amount. ``Infinity``/``1e400``/``NaN`` are refused: an
+    unbounded budget would pass the "live needs a positive budget" rule."""
     raw = env.get(name, default).strip() or default
-    return Decimal(raw)
+    try:
+        value = Decimal(raw)
+    except InvalidOperation:
+        raise LLMError(f"{name} must be a number") from None
+    problem = budget_limit_problem(value)
+    if problem:
+        raise LLMError(f"{name} {problem}")
+    return value
 
 
 LEDGER_NAME = "llm_budget.jsonl"

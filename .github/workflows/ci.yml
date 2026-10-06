@@ -121,10 +121,14 @@ jobs:
           uv run alembic -x url="$JETTAE_TEST_PG_URL" upgrade head
           uv run alembic -x url="$JETTAE_TEST_PG_URL" check
       - name: PostgreSQL tests (must not be skipped)
+        # `shell: bash` runs the step with `-eo pipefail`: without it the pipeline's exit status
+        # is tee's, so failing (or all-deselected, exit 5) tests would still pass the job
+        shell: bash
         run: |
           uv run pytest -q -rs tests/api/test_api_postgres.py \
             tests/llm_agents/test_la_budget_store.py -k "pg_ or postgres" | tee pg.log
           if grep -q "SKIPPED" pg.log; then echo "PostgreSQL tests were skipped"; exit 1; fi
+          grep -Eq "[0-9]+ passed" pg.log || { echo "no PostgreSQL test ran"; exit 1; }
 
   frontend:
     runs-on: ubuntu-latest
@@ -133,6 +137,11 @@ jobs:
       run:
         working-directory: frontend
     steps:
+      - name: Assert paid LLM calls are off
+        working-directory: .
+        run: |
+          test -z "${ANTHROPIC_API_KEY:-}" && test -z "${OPENAI_API_KEY:-}"
+          test "$JETTAE_LLM_MODE" = offline && test "$JETTAE_LLM_BUDGET_KRW" = 0
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:

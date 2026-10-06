@@ -1,0 +1,17 @@
+# Every text file is stored and checked out with LF on every OS. The evaluation provenance in
+# docs/eval_results.md hashes data/seeds/* and the engine sources byte for byte, so a Windows
+# checkout with core.autocrlf=true (the Git for Windows default) would otherwise print other
+# input and code hashes than the published commit. Shell scripts and YAML also need LF.
+* text=auto eol=lf
+
+# binary: never converted
+*.ico binary
+*.png binary
+*.jpg binary
+*.pdf binary
+*.xlsx binary
+*.xls binary
+*.hwp binary
+*.hwpx binary
+*.zip binary
+*.gz binary

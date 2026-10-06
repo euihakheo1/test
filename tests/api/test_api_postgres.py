@@ -143,8 +143,9 @@ def test_pg_concurrent_claims_and_incremental(pg_rt):
 
 
 def test_pg_concurrent_refresh_does_not_fork_the_token_family(pg_rt, monkeypatch):
-    """Two requests rotating the same refresh token at the same time: at most one gets a
-    new token; the other is treated as reuse (row-level atomic consume)."""
+    """Two requests rotating the same refresh token at the same time: exactly one gets a
+    new refresh token (row-level atomic consume); the other gets an access token only
+    (reuse grace, tabs sharing one cookie) or, with the grace disabled, is reuse."""
     import time
 
     from jettae.api.auth import AuthService
@@ -175,11 +176,10 @@ def test_pg_concurrent_refresh_does_not_fork_the_token_family(pg_rt, monkeypatch
         t.start()
     for t in th:
         t.join()
-    assert sorted(k for k, _ in out) == ["err", "ok"], out
-    assert [c for k, c in out if k == "err"] in (
-        ["refresh_token_reused"],
-        ["invalid_refresh_token"],
-    )
+    rotated = [v for k, v in out if k == "ok" and v]
+    assert len(rotated) == 1, out
+    other = next(x for x in out if not (x[0] == "ok" and x[1]))
+    assert other in (("ok", ""), ("err", "refresh_token_reused"), ("err", "invalid_refresh_token"))
 
 
 def test_pg_nul_in_uploaded_csv_is_reported_not_crashing(pg_rt, make_client, tmp_path):

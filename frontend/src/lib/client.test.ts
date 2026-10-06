@@ -155,6 +155,28 @@ test("failed refresh clears the client session and surfaces the 401", async () =
   assert.equal(getSessionState().status, "anonymous");
 });
 
+for (const status of [429, 500, 503]) {
+  test(`refresh answered ${status} keeps the session (state "error"), never logs the user out`, async () => {
+    useFetch((c) => (c.url === "/api/v1/auth/refresh" ? err(status, "too_many_requests") : err(401, "token_expired")));
+    assert.equal(await loadSession(true), null);
+    assert.equal(getSessionState().status, "error");
+    await assert.rejects(
+      api.listJobs(),
+      (e: unknown) => e instanceof ApiError && e.code === "session_unavailable" && e.status === status,
+    );
+    assert.equal(getSessionState().status, "error");
+  });
+}
+
+test("refresh that cannot reach the server keeps the session (state \"error\")", async () => {
+  g.fetch = async (input: string) => {
+    if (String(input) === "/api/v1/auth/refresh") throw new TypeError("fetch failed");
+    return err(401, "token_expired");
+  };
+  assert.equal(await loadSession(true), null);
+  assert.equal(getSessionState().status, "error");
+});
+
 test("concurrent 401s share a single refresh request", async () => {
   const seen = new Map<string, number>();
   let release!: () => void;

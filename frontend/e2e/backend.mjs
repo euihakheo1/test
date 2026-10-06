@@ -45,6 +45,9 @@ Object.assign(env, {
   // 한 IP 에서 가입·로그인을 여러 번 하므로 IP 제한을 끈다(제한 동작 자체는 백엔드 테스트가 확인).
   JETTAE_AUTH_IP_PER_MINUTE: "0",
   JETTAE_PUBLIC_IP_PER_MINUTE: "0",
+  // refresh 재사용 유예(기본 20초)를 2초로 줄여, 유예 안의 겹친 갱신과 유예 뒤의 재사용(세션 종료)을
+  // 한 테스트에서 모두 확인한다.
+  JETTAE_REFRESH_REUSE_GRACE_S: "2",
   JETTAE_WORKER_POLL_S: "0.3",
   PYTHONIOENCODING: "utf-8",
   PYTHONUTF8: "1",

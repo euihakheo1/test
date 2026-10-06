@@ -59,7 +59,7 @@ def test_signup_login_me(client, rt):
     assert other.status_code == 403
 
 
-def test_refresh_rotation_and_reuse_detection(client):
+def test_refresh_rotation_and_reuse_detection(client, clock):
     first = session_cookies(
         client.post(
             f"{API}/auth/signup",
@@ -71,7 +71,8 @@ def test_refresh_rotation_and_reuse_detection(client):
     new = {**first, **session_cookies(r1)}
     assert new["jt_refresh"] != first["jt_refresh"]
     assert new["jt_access"] != first["jt_access"]
-    # replaying the rotated token: rejected and the whole family revoked
+    # replaying the rotated token after the grace window: rejected, whole family revoked
+    clock.advance(client.app.state.runtime.settings.refresh_reuse_grace_s + 1)
     replay = send(client, "POST", f"{API}/auth/refresh", first)
     assert replay.status_code == 401 and replay.json()["error"]["code"] == "refresh_token_reused"
     stolen = send(client, "POST", f"{API}/auth/refresh", new)

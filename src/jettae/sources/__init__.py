@@ -84,7 +84,8 @@ def redact_url(url: str) -> str:
 
 def write_json(path: Path, obj: Any) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(obj, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    text = json.dumps(obj, ensure_ascii=False, indent=2) + "\n"
+    path.write_text(text, encoding="utf-8", newline="\n")  # same bytes (and hash) on every OS
     return path
 
 
@@ -111,7 +112,7 @@ def upsert_md_section(path: Path, key: str, body: str, title: str = "# Evaluatio
         if not text.endswith("\n"):
             text += "\n"
         text += "\n" + block
-    path.write_text(text, encoding="utf-8")
+    path.write_text(text, encoding="utf-8", newline="\n")  # tracked file: LF on every OS
     return path
 
 
