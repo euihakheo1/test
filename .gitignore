@@ -1,0 +1,77 @@
+# Publication policy (docs/PUBLIC_USE.md §3; checked by scripts/secret_scan.py and gitleaks in CI):
+# security and operations *source code* is published; real secrets, user data, databases,
+# caches, logs, runtime state, raw downloads and regenerable results never enter Git.
+
+# downloaded public sources (re-created by `jettae sources ... fetch`; manifests are tracked)
+data/raw/
+# downloaded third-party documents for the prior-art notes (bibliographic notes stay tracked)
+docs/ip/sources/*.pdf
+# evaluation outputs: regenerable from data/seeds + data/manifests (`jettae eval ...`);
+# the reviewed summaries live in docs/eval_results.md
+data/results/
+
+# databases and dumps (SQLite dev DB, backups)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-journal
+*.dump
+
+# local runtime state: SQLite DB, uploaded files (user data), blob store, LLM replay cache,
+# budget ledger, agent runs, demo files. The default locations are all under var/.
+var/
+blobs/
+llm_cache/
+llm_replay/
+llm_budget.jsonl
+
+# logs
+*.log
+logs/
+
+# secrets: only the example files with obviously fake values are tracked
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.hypothesis/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# frontend (see also frontend/.gitignore)
+node_modules/
+.next/
+frontend/node_modules/
+frontend/.next/
+frontend/next-env.d.ts
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+frontend/.e2e-tmp/
+*.tsbuildinfo
+
+# editors / OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

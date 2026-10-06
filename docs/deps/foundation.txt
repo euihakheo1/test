@@ -1,0 +1,4 @@
+# Foundation task: dependencies are declared directly in pyproject.toml (foundation owns it).
+# Other tasks: append one requirement per line to docs/deps/<your-task>.txt instead of editing
+# pyproject.toml. Note: PyYAML is available only transitively (not declared); the holiday
+# override loader uses JSON by default and YAML only if PyYAML is importable.

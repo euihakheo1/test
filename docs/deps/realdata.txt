@@ -1,0 +1,3 @@
+# realdata task (BPI 2019, law/notice, standard contracts, E4/E5/E6): no new dependencies.
+# Uses httpx, lxml, pdfplumber, typer, rich (already declared). HWP 5.0 is read with an in-repo
+# OLE2/CFB reader (src/jettae/sources/contract/cfb.py); olefile/pyhwp are NOT required.

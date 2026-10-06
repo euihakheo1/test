@@ -1,0 +1,6 @@
+# Backend-security task (env contract, cookie sessions, XLSX guard).
+# python-dotenv: imported directly by jettae.config.load_env (.env loading). It is already
+# installed and locked as a dependency of pydantic-settings; listing it in pyproject.toml
+# as a direct dependency is left to the integrator.
+python-dotenv>=1.0
+# lxml: already a direct dependency (used by jettae.ingest.xlsx_guard for streaming scans).

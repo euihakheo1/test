@@ -1,0 +1,195 @@
+# CI for 제때받기 (jettae).
+#
+# Design constraints:
+# - No repository secrets are needed or read. Paid LLM calls are impossible here: every job runs
+#   with JETTAE_LLM_MODE=offline and JETTAE_LLM_BUDGET_KRW=0, and the first step of each job fails
+#   if a provider API key is present in the environment.
+# - PostgreSQL checks run only against the throwaway service container of the `postgres` job
+#   (trust auth, no password, destroyed with the job). The tests drop the `public` schema of
+#   the target database, so JETTAE_TEST_PG_URL must never point at a real database.
+# - uv and Node versions match the lock files and `frontend/package.json` engines (>=22.18).
+name: ci
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  JETTAE_LLM_MODE: offline
+  JETTAE_LLM_BUDGET_KRW: "0"
+  UV_VERSION: "0.12.23"
+  PYTHONUTF8: "1"
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Assert paid LLM calls are off
+        run: |
+          test -z "${ANTHROPIC_API_KEY:-}" && test -z "${OPENAI_API_KEY:-}"
+          test "$JETTAE_LLM_MODE" = offline && test "$JETTAE_LLM_BUDGET_KRW" = 0
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # the secret scan reads every commit
+      - name: gitleaks (every commit, values redacted)
+        # Pinned release + checksum instead of the gitleaks action (which needs a license key for
+        # organisations). Runs before any install so caches and the venv are never scanned.
+        env:
+          GITLEAKS_VERSION: "8.30.1"
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$archive"
+          echo "$GITLEAKS_SHA256  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" git --redact --no-banner -c .gitleaks.toml .
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+      - name: Install (locked)
+        run: uv sync --frozen --all-extras
+      - name: Secret and private-data scan (publish set + full history)
+        run: uv run python scripts/secret_scan.py
+      - name: Ruff
+        run: uv run ruff check .
+      - name: Ruff format
+        run: uv run ruff format --check .
+      - name: Mypy
+        run: uv run mypy src
+      - name: Pytest (PostgreSQL-only tests skip without JETTAE_TEST_PG_URL)
+        run: uv run pytest -q
+      - name: Alembic round trip on SQLite
+        run: |
+          url="sqlite:///$RUNNER_TEMP/alembic.db"
+          uv run alembic heads
+          uv run alembic -x url="$url" upgrade head
+          uv run alembic -x url="$url" downgrade base
+          uv run alembic -x url="$url" upgrade head
+          uv run alembic -x url="$url" check
+
+  postgres:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: jettae_ci
+          POSTGRES_USER: postgres
+          # throwaway container reachable only from this job; no credential exists
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d jettae_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      JETTAE_TEST_PG_URL: postgresql+psycopg://postgres@localhost:5432/jettae_ci
+    steps:
+      - name: Assert paid LLM calls are off
+        run: |
+          test -z "${ANTHROPIC_API_KEY:-}" && test -z "${OPENAI_API_KEY:-}"
+          test "$JETTAE_LLM_MODE" = offline && test "$JETTAE_LLM_BUDGET_KRW" = 0
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+      - name: Install (locked)
+        run: uv sync --frozen --all-extras
+      - name: Migrations on PostgreSQL (CLI startup check + Alembic round trip)
+        env:
+          JETTAE_ENV: test
+          JETTAE_DATABASE_URL: ${{ env.JETTAE_TEST_PG_URL }}
+        run: |
+          uv run jettae api migrate
+          uv run alembic -x url="$JETTAE_TEST_PG_URL" downgrade base
+          uv run alembic -x url="$JETTAE_TEST_PG_URL" upgrade head
+          uv run alembic -x url="$JETTAE_TEST_PG_URL" check
+      - name: PostgreSQL tests (must not be skipped)
+        run: |
+          uv run pytest -q -rs tests/api/test_api_postgres.py \
+            tests/llm_agents/test_la_budget_store.py -k "pg_ or postgres" | tee pg.log
+          if grep -q "SKIPPED" pg.log; then echo "PostgreSQL tests were skipped"; exit 1; fi
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install (locked)
+        run: npm ci
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck (next typegen first; no .next or next-env.d.ts is committed)
+        run: npm run typecheck
+      - name: Unit tests
+        run: npm test
+      - name: Build
+        env:
+          JETTAE_API_ORIGIN: http://127.0.0.1:8000
+        run: npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: [backend, frontend]
+    steps:
+      - name: Assert paid LLM calls are off
+        run: |
+          test -z "${ANTHROPIC_API_KEY:-}" && test -z "${OPENAI_API_KEY:-}"
+          test "$JETTAE_LLM_MODE" = offline && test "$JETTAE_LLM_BUDGET_KRW" = 0
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22.x"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend (locked)
+        run: uv sync --frozen --all-extras
+      - name: Install frontend (locked) and chromium
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      # e2e/backend.mjs starts migrate + API + worker on a fresh SQLite DB with JETTAE_ENV=test,
+      # a random per-run JWT key, offline LLM and budget 0 (inherited JETTAE_* and *_API_KEY
+      # variables are dropped); e2e/web.mjs builds and starts Next against that API.
+      - name: Playwright E2E (API + worker + web)
+        working-directory: frontend
+        env:
+          CI: "true"
+        run: npm run e2e
+      - name: Upload Playwright report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/.e2e-tmp/report
+          retention-days: 7

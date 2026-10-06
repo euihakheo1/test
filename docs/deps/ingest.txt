@@ -1,0 +1,5 @@
+# Ingest task: no new dependencies required (uses openpyxl, pdfplumber/pdfminer, charset-normalizer,
+# lxml; Pillow in tests only; all already installed).
+# Optional, NOT requested: xlrd>=2.0 would allow reading legacy binary .xls (BIFF) files; today they
+# are reported as FAILED with "save as .xlsx or CSV". reportlab is not installed; test PDFs are
+# written by hand (tests/ingest/ing_helpers.py).

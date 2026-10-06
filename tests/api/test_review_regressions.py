@@ -1,0 +1,262 @@
+"""Small hand-written review probes; these are not evaluation data.
+
+These tests state the expected business invariants and deliberately expose defects in
+the uploaded snapshot. They were added only to the isolated review copy.
+"""
+
+from datetime import date
+from decimal import Decimal
+
+import pytest
+from jt_api_helpers import signup
+
+from jettae.db.ingest_bridge import ModuleIngest, normalize_result
+from jettae.db.runtime import Runtime
+from jettae.domain.models import BankTxn, Invoice, SettlementLine
+from jettae.domain.money import Money
+from jettae.domain.status import TradeType
+from jettae.evals.ftc_eval import VariantCheck
+from jettae.evidence.engine import full_recompute
+from jettae.evidence.snapshot import AnalysisConfig, Snapshot
+from jettae.ingest.pipeline import parse_document
+from jettae.llm.base import BudgetExceeded
+from jettae.llm.budget import Budget
+from jettae.worker import Worker
+
+API = "/api/v1"
+HEADER = "entity,id,counterparty,amount,date\n"
+
+
+def upload(client, headers, content, document_id=None):
+    data = {"kind": "other"}
+    if document_id:
+        data["document_id"] = document_id
+    response = client.post(
+        f"{API}/documents",
+        headers=headers,
+        files={"file": ("ledger.csv", content.encode(), "text/csv")},
+        data=data,
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_old_version_reingest_cannot_replace_newer_ledger(client, alice, worker, rt):
+    v1 = upload(client, alice, HEADER + "invoice,I1,가나유통,1000,2025-08-07\n")
+    worker.run_once()
+    v2 = upload(
+        client,
+        alice,
+        HEADER + "invoice,I1,가나유통,2000,2025-08-07\n",
+        v1["document"]["document_id"],
+    )
+    worker.run_once()
+    tenant = client.get(f"{API}/auth/me", headers=alice).json()["tenant_id"]
+    assert rt.repos.ledger.get(tenant, "invoice", "I1").amount.amount == 2000
+    retry = client.post(
+        f"{API}/jobs",
+        headers=alice,
+        json={"type": "ingest_document", "params": {"doc_version_id": v1["document"]["id"]}},
+    )
+    assert retry.status_code == 202, retry.text
+    worker.run_once()
+    actual = rt.repos.ledger.get(tenant, "invoice", "I1").amount.amount
+    print(f"review_old_version: newest_version={v2['document']['version']}, amount={actual}")
+    assert actual == 2000, "Retrying v1 must not overwrite the current v2 ledger"
+
+
+def test_valid_zero_row_revision_removes_previous_records(client, alice, worker, rt):
+    v1 = upload(client, alice, HEADER + "invoice,I1,가나유통,1000,2025-08-07\n")
+    worker.run_once()
+    v2 = upload(client, alice, HEADER, v1["document"]["document_id"])
+    worker.run_once()
+    job = client.get(f"{API}/jobs/{v2['job_id']}", headers=alice).json()
+    assert job["status"] == "succeeded", job
+    assert job["result"]["document_status"] == "PARSED", job
+    tenant = client.get(f"{API}/auth/me", headers=alice).json()["tenant_id"]
+    remaining = rt.repos.ledger.list(tenant, "invoice")
+    print(
+        f"review_empty_revision: parsed_records={job['result']['records']}, "
+        f"ledger_rows={len(remaining)}"
+    )
+    assert remaining == [], "A successfully parsed empty replacement must clear its old rows"
+
+
+def test_real_csv_invalid_row_diagnostic_survives_bridge():
+    content = (
+        "거래처,거래형태,발주번호,정산금액,상품수령일\n"
+        "가나유통,직매입,PO-1,1000,2025-08-07\n"
+        "가나유통,직매입,PO-2,금액오류,2025-08-07\n"
+    ).encode()
+    raw = parse_document(
+        content,
+        filename="settlement.csv",
+        media_type="text/csv",
+        kind="settlement",
+        tenant_id="review",
+        doc_version_id="v1",
+        document_key="d1",
+        # Input updated to the split mapping contract (docs/PROGRESS.md): the company name
+        # is a document-level option, the other entries are column indexes.
+        mapping={
+            "format_id": "retail_settlement",
+            "columns": {"trade_type": 1, "reference": 2, "amount": 3, "goods_received_date": 4},
+            "options": {"counterparty_override": "가나유통"},
+        },
+    )
+    assert len(raw.records) == 1 and raw.issues, raw
+    bridged = normalize_result(raw)
+    print(
+        f"review_row_issues: raw_issues={len(raw.issues)}, API_notes={bridged.notes}, "
+        f"status={bridged.status.value}"
+    )
+    assert getattr(bridged, "issues", ()) or bridged.notes or bridged.reason, (
+        "A skipped financial row must remain visible to the API consumer"
+    )
+
+
+def test_ui_counterparty_column_mapping_is_not_a_literal_value():
+    content = (
+        "메모,거래처,거래형태,발주번호,정산금액,상품수령일\n"
+        "정산,가나유통,직매입,PO-1,1000,2025-08-07\n"
+    ).encode()
+    raw = parse_document(
+        content,
+        filename="settlement.csv",
+        media_type="text/csv",
+        kind="settlement",
+        tenant_id="review",
+        doc_version_id="v1",
+        document_key="d1",
+        # The field -> column indexes generated by the UI, in the split mapping contract
+        # (input updated, see docs/PROGRESS.md): columns hold indexes, options hold values.
+        mapping={
+            "format_id": "retail_settlement",
+            "columns": {
+                "counterparty": 1,
+                "trade_type": 2,
+                "reference": 3,
+                "amount": 4,
+                "goods_received_date": 5,
+            },
+        },
+    )
+    assert len(raw.records) == 1, raw
+    actual = raw.records[0].counterparty
+    print(f"review_counterparty_mapping: expected=가나유통, actual={actual!r}")
+    assert actual == "가나유통", "A selected column index must not become the company name"
+
+
+def test_parallel_budget_instances_share_one_limit(tmp_path):
+    path = tmp_path / "review-budget.jsonl"
+    worker_a = Budget(Decimal(10), ledger_path=path)
+    worker_b = Budget(Decimal(10), ledger_path=path)
+    first = worker_a.reserve(Decimal(8), model="review", purpose="test-only")
+    worker_a.settle(first, Decimal(8))
+    with pytest.raises(BudgetExceeded):
+        worker_b.reserve(Decimal(8), model="review", purpose="test-only")
+
+
+def test_all_three_metric_requires_all_three_checks():
+    row = VariantCheck(
+        label="review",
+        due=date(2025, 10, 6),
+        delay_days=14,
+        interest=None,
+        due_ok=True,
+        delay_ok=True,
+        interest_ok=None,
+    )
+    print(
+        "review_all_three_metric: due_ok=True, delay_ok=True, interest_ok=None, "
+        f"all_ok={row.all_ok}"
+    )
+    assert not row.all_ok, "A report labelled 'all three' cannot pass an uncomputed interest check"
+
+
+def test_one_sale_with_two_documents_is_not_two_receivables():
+    common = dict(
+        tenant_id="review",
+        counterparty="가나유통",
+        amount=Money(10000),
+        trade_type=TradeType.DIRECT,
+        goods_received_date=date(2025, 8, 7),
+        reference="PO-1",
+    )
+    snap = Snapshot(
+        tenant_id="review",
+        invoices=(Invoice(id="invoice-PO-1", **common),),
+        settlement_lines=(SettlementLine(id="settlement-PO-1", **common),),
+        bank_txns=(
+            BankTxn(
+                id="payment-PO-1",
+                tenant_id="review",
+                booked_date=date(2025, 10, 20),
+                amount=Money(10000),
+                counterparty="가나유통",
+                reference="PO-1",
+            ),
+        ),
+        config=AnalysisConfig(as_of=date(2025, 11, 1), rollover=False),
+    )
+    result = full_recompute(snap)
+    balance = sum(d.computation("recon").outputs["open"].amount for d in result.decisions.values())
+    print(
+        f"review_same_sale: receivables={len(snap.receivables)}, "
+        f"decisions={len(result.decisions)}, balance={balance}"
+    )
+    assert balance == 0, "The same sale evidenced by two documents was fully paid once"
+
+
+def test_real_parser_zero_row_revision(settings, clock, rt, make_client):
+    real = Runtime.build(settings, clock=clock, ingest=ModuleIngest())
+    try:
+        client = make_client(real)
+        headers = signup(client, "real-review@x.example", "review")
+        header = "거래처,거래형태,발주번호,정산금액,상품수령일\n"
+        v1 = upload(client, headers, header + "가나유통,직매입,PO-1,1000,2025-08-07\n")
+        Worker(real, owner="review").run_once()
+        tenant = client.get(f"{API}/auth/me", headers=headers).json()["tenant_id"]
+        assert len(real.repos.ledger.list(tenant, "settlement_line")) == 1
+        v2 = upload(client, headers, header, v1["document"]["document_id"])
+        Worker(real, owner="review").run_once()
+        job = client.get(f"{API}/jobs/{v2['job_id']}", headers=headers).json()
+        print(f"review_real_empty_revision: {job['result']}")
+        assert job["result"]["document_status"] == "PARSED", job
+        assert real.repos.ledger.list(tenant, "settlement_line") == []
+    finally:
+        real.close()
+
+
+def test_real_parser_old_version_cannot_restore_obsolete_row(settings, clock, rt, make_client):
+    real = Runtime.build(settings, clock=clock, ingest=ModuleIngest())
+    try:
+        client = make_client(real)
+        headers = signup(client, "real-old@x.example", "review")
+        header = "거래처,거래형태,발주번호,정산금액,상품수령일\n"
+        v1 = upload(client, headers, header + "가나유통,직매입,PO-1,1000,2025-08-07\n")
+        w = Worker(real, owner="review")
+        w.run_once()
+        upload(
+            client,
+            headers,
+            header + "가나유통,직매입,PO-1,2000,2025-08-07\n",
+            v1["document"]["document_id"],
+        )
+        w.run_once()
+        tenant = client.get(f"{API}/auth/me", headers=headers).json()["tenant_id"]
+        assert [r.amount.amount for r in real.repos.ledger.list(tenant, "settlement_line")] == [
+            2000
+        ]
+        retry = client.post(
+            f"{API}/jobs",
+            headers=headers,
+            json={"type": "ingest_document", "params": {"doc_version_id": v1["document"]["id"]}},
+        )
+        assert retry.status_code == 202, retry.text
+        w.run_once()
+        amounts = sorted(r.amount.amount for r in real.repos.ledger.list(tenant, "settlement_line"))
+        print(f"review_real_old_version: expected=[2000], actual={amounts}")
+        assert amounts == [2000]
+    finally:
+        real.close()

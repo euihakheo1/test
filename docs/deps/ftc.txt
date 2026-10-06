@@ -1,0 +1,4 @@
+# FTC source + evals (E1/E2/E3) task: no new dependencies.
+# Uses only httpx, lxml, typer, rich (already in pyproject.toml).
+# Pillow (present in the venv) was used only ad hoc to enlarge table images while
+# transcribing; no committed code imports it.

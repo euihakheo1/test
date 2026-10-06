@@ -1,0 +1,5 @@
+# Frontend task: no Python dependencies. npm packages live in frontend/package.json + package-lock.json
+# (next 16.3.8, react 19.2.8, typescript 5, eslint 9 + eslint-config-next 16.3.8). No extra runtime libs.
+# npm audit (2026-10-06): 5 "high" advisories, all in the dev-only lint chain
+# (braces <- micromatch <- fast-glob <- @next/eslint-plugin-next <- eslint-config-next). The suggested
+# `npm audit fix --force` downgrades eslint-config-next to 14.x (breaking) and was NOT applied.

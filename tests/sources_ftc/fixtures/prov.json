@@ -1,0 +1,34 @@
+[
+ {
+  "file": "f16947.xml",
+  "decision_id": "16947",
+  "source_url": "https://www.law.go.kr/DRF/lawService.do?OC={OC}&target=ftc&ID=16947&type=XML",
+  "fetched_at": "2026-10-05T20:14:58+00:00",
+  "source_sha256": "d9cc1e69f831b103d6b6ee651eaceafe1cf72155b64661be8d0f2fe5a8d6f0f5",
+  "trim": "none (full DRF response)"
+ },
+ {
+  "file": "x19065.xml",
+  "decision_id": "19065",
+  "source_url": "https://www.law.go.kr/DRF/lawService.do?OC={OC}&target=ftc&ID=19065&type=XML",
+  "fetched_at": "2026-10-05T20:15:56+00:00",
+  "source_sha256": "1eb2133286dd49c6a1a89ad4ac7188aac45a400751fc164c2241673086bb7581",
+  "trim": "이유 text kept from '나. 상품판매대금 등의 지급의무 위반행위' up to (excluding) '2) 관련 법 규정 및 법리' (chars 8239..10422 of the original 이유); all other elements unchanged"
+ },
+ {
+  "file": "x19005.xml",
+  "decision_id": "19005",
+  "source_url": "https://www.law.go.kr/DRF/lawService.do?OC={OC}&target=ftc&ID=19005&type=XML",
+  "fetched_at": "2026-10-05T20:15:38+00:00",
+  "source_sha256": "9ed8b7e6d6572e245c5b1faa59676ec9c86b2e616103032913f336790f6703ea",
+  "trim": "이유 text kept from '173 \t' up to (excluding) '174 \t' (chars 58873..59679 of the original 이유); all other elements unchanged"
+ },
+ {
+  "file": "x19299.xml",
+  "decision_id": "19299",
+  "source_url": "https://www.law.go.kr/DRF/lawService.do?OC={OC}&target=ftc&ID=19299&type=XML",
+  "fetched_at": "2026-10-05T20:16:16+00:00",
+  "source_sha256": "2c3810120e1a5baf72a9db3aa34ad610c8eaaafc1df921a6eacf8b61caea7f99",
+  "trim": "이유 text kept from '라. 하도급대금 지연이자 미지급행위' up to (excluding) '34       ' (chars 10565..11046 of the original 이유); all other elements unchanged"
+ }
+]

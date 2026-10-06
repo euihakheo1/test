@@ -1,0 +1,7 @@
+# LLM / OCR(VLM) / agent flows / MCP task: no new packages installed.
+# Already declared in pyproject.toml and used: mcp>=1.2 (installed 2.3.0: MCPServer = v2 name of
+# FastMCP), extras llm (anthropic 1.11.0, openai 3.24.0) and agents (langgraph 1.2.13).
+# Used but only present transitively -- the integrator may want to declare them explicitly:
+jsonschema>=4.20      # LLM output schema validation (jettae.llm.base.validate_schema); via mcp
+pypdfium2>=4.0        # render scanned PDF pages for the VLM (jettae.ocr.vlm); via pdfplumber
+pillow>=10            # PNG encoding of rendered pages (jettae.ocr.vlm); via pdfplumber

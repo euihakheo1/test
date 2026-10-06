@@ -1,0 +1,13 @@
+.git
+.venv
+**/__pycache__
+.mypy_cache
+.ruff_cache
+.pytest_cache
+.hypothesis
+data/raw
+var
+*.db
+frontend/node_modules
+frontend/.next
+.env

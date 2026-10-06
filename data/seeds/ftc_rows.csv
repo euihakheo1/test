@@ -1,0 +1,96 @@
+decision_id,case_no,flseq,table_label,row_idx,deal_type,base_date_kind,base_date,due_date_in_table,paid_date,principal_krw,delay_days_in_table,interest_in_table,unpaid_interest_in_table,unit_note,transcriber,verified,notes,serial_no
+19065,2024유대1559,163492277,표 11,1,direct,,,2022-11-21,2022-12-02,3002898,11,11448,2892,원,claude-agent,no,no base-date column in table (text footnote: 직매입 기준 = 매입기간 종료일); interest_in_table = 법정 지연이자; 기지급 8556,1
+19065,2024유대1559,163492277,표 11,2,direct,,,2022-12-20,2023-01-20,43658613,31,496216,199577,원,claude-agent,no,no base-date column; 기지급 296639,1
+19065,2024유대1559,163492277,표 11,3,direct,,,2024-01-30,2024-02-29,39357285,30,431349,163935,원,claude-agent,no,no base-date column; 기지급 267414,1
+19065,2024유대1559,163492277,표 11,4,direct,,,2024-05-20,2024-06-07,20586392,18,104447,23229,원,claude-agent,no,no base-date column; 기지급 81218,1
+19065,2024유대1559,163492277,표 11,5,direct,,,2024-05-31,2024-06-13,57740265,13,245243,68067,원,claude-agent,no,"no base-date column; due printed as '24. 5. 3.1' (read as 2024-05-31); 기지급 177176",1
+19065,2024유대1559,163492277,표 11,6,direct,,,2024-01-30,2024-02-29,38521897,30,400134,138396,원,claude-agent,no,no base-date column; 기지급 261738,2
+19065,2024유대1559,163492277,표 11,7,direct,,,2024-05-20,2024-06-07,45870482,18,242975,62006,원,claude-agent,no,no base-date column; 기지급 180969,2
+19065,2024유대1559,163492277,표 11,8,direct,,,2024-05-31,2024-06-13,40177190,13,135114,11831,원,claude-agent,no,no base-date column; 기지급 123283,2
+19065,2024유대1559,163492277,표 11,9,direct,,,2024-01-30,2024-02-29,90110141,30,971049,358794,원,claude-agent,no,no base-date column; 기지급 612255,3
+19065,2024유대1559,163492277,표 11,10,direct,,,2024-05-20,2024-06-07,47146242,18,256044,70042,원,claude-agent,no,no base-date column; 기지급 186002; rows 4..457 elided (⋮) after this row,3
+19065,2024유대1559,163492277,표 11,11,direct,,,2024-01-30,2024-02-29,15681600,30,164210,57661,원,claude-agent,no,no base-date column; 기지급 106549,458
+19065,2024유대1559,163492277,표 11,12,direct,,,2024-05-20,2024-06-07,17953199,18,105412,34582,원,claude-agent,no,no base-date column; 기지급 70830,458
+19065,2024유대1559,163492277,표 11,13,direct,,,2024-05-20,2024-06-07,73810341,18,444699,153502,원,claude-agent,no,no base-date column; 기지급 291197,459
+19065,2024유대1559,163492277,표 11,14,direct,,,2024-06-20,2024-07-02,3364105,12,16612,7027,원,claude-agent,no,no base-date column; 기지급 9585,459
+19065,2024유대1559,163492279,표 12,1,consignment,,,2024-05-10,2024-05-24,61726910,14,366979,109924,원,claude-agent,no,"no base-date column; 특약매입/임대을; no unit line printed for 표 12 (원 assumed, as 표 11); 기지급 257055",460
+19065,2024유대1559,163492279,표 12,2,consignment,,,2024-05-10,2024-05-30,3126640231,20,26555011,6052452,원,claude-agent,no,no base-date column; 기지급 20502559,461
+19065,2024유대1559,163492279,표 12,3,consignment,,,2024-05-10,2024-06-07,19664440,28,233818,91588,원,claude-agent,no,no base-date column; 기지급 142230,462
+19065,2024유대1559,163492279,표 12,4,consignment,,,2024-05-10,2024-06-07,75357653,28,896033,350980,원,claude-agent,no,no base-date column; 기지급 545053,463
+19065,2024유대1559,163492279,표 12,5,consignment,,,2024-05-10,2024-06-07,53742328,28,639018,250306,원,claude-agent,no,no base-date column; 기지급 388712; rows 465..530 elided (⋮) after this row,464
+19065,2024유대1559,163492279,표 12,6,consignment,,,2024-05-10,2024-06-07,48779154,28,580004,227190,원,claude-agent,no,no base-date column; 기지급 352814,531
+19065,2024유대1559,163492279,표 12,7,consignment,,,2024-05-10,2024-06-07,29521837,28,351027,137499,원,claude-agent,no,no base-date column; 기지급 213528,532
+19065,2024유대1559,163492279,표 12,8,consignment,,,2024-05-10,2024-06-07,19745383,28,234781,91965,원,claude-agent,no,no base-date column; 기지급 142816,533
+19065,2024유대1559,163492279,표 12,9,consignment,,,2024-05-10,2024-06-07,34575804,28,411121,161038,원,claude-agent,no,no base-date column; 기지급 250083,534
+19065,2024유대1559,163492283,표 14,1,consignment,sales_close_date,2020-11-30,2021-01-09,2021-02-09,7711879,31,72681,,원,claude-agent,no,매장임차인 상품판매대금 공탁; paid_date = 공탁일; principal = 상품판매대금(공탁금액),1
+19065,2024유대1559,163492283,표 14,2,consignment,sales_close_date,2024-01-31,2024-03-11,2024-08-05,65001500,147,4057696,,원,claude-agent,no,paid_date = 공탁일,1
+19065,2024유대1559,163492283,표 14,3,consignment,sales_close_date,2024-02-29,2024-04-09,2024-08-05,60240147,118,3018609,,원,claude-agent,no,paid_date = 공탁일,1
+19065,2024유대1559,163492283,표 14,4,consignment,sales_close_date,2024-03-31,2024-05-10,2024-08-05,87221135,87,3222403,,원,claude-agent,no,paid_date = 공탁일,1
+19065,2024유대1559,163492283,표 14,5,consignment,sales_close_date,2024-04-30,2024-06-09,2024-08-05,26888718,57,650854,,원,claude-agent,no,paid_date = 공탁일,1
+19065,2024유대1559,163492283,표 14,6,consignment,sales_close_date,2020-12-31,2021-02-09,2021-03-11,4583402,30,58391,,원,claude-agent,no,paid_date = 공탁일,2
+19065,2024유대1559,163492283,표 14,7,consignment,sales_close_date,2021-02-28,2021-04-09,2021-04-30,4007907,21,35742,,원,claude-agent,no,paid_date = 공탁일,2
+19065,2024유대1559,163492283,표 14,8,consignment,sales_close_date,2020-12-31,2021-02-09,2021-03-10,1147273,29,14129,,원,claude-agent,no,paid_date = 공탁일,3
+19065,2024유대1559,163492283,표 14,9,consignment,sales_close_date,2022-09-30,2022-11-09,2022-12-23,64352272,44,1202418,,원,claude-agent,no,paid_date = 공탁일,4
+19065,2024유대1559,163492283,표 14,10,consignment,sales_close_date,2022-10-31,2022-12-10,2022-12-23,1910876,13,10549,,원,claude-agent,no,paid_date = 공탁일; rows of 연번 5..20 elided (⋮) after this row,4
+19065,2024유대1559,163492283,표 14,11,consignment,sales_close_date,2023-02-28,2023-04-09,2024-06-13,12082204,431,2211374,,원,claude-agent,no,paid_date = 공탁일,21
+19065,2024유대1559,163492283,표 14,12,consignment,sales_close_date,2023-03-31,2024-05-10,2024-06-13,13212841,400,2244373,,원,claude-agent,no,"paid_date = 공탁일; 법정지급기한 printed as '2024. 5. 10.' (checked on 3x crop); recorded as printed",21
+19065,2024유대1559,163492283,표 14,13,consignment,sales_close_date,2022-03-31,2022-05-10,2022-05-20,2890726,10,12275,,원,claude-agent,no,paid_date = 공탁일,22
+19065,2024유대1559,163492283,표 14,14,consignment,sales_close_date,2022-04-30,2022-06-09,2022-06-20,3023487,11,14124,,원,claude-agent,no,paid_date = 공탁일,22
+19065,2024유대1559,163492283,표 14,15,consignment,sales_close_date,2022-05-31,2022-07-10,2022-07-20,3419329,10,14521,,원,claude-agent,no,paid_date = 공탁일,22
+19065,2024유대1559,163492283,표 14,16,consignment,sales_close_date,2022-06-30,2022-08-09,2022-08-22,3258060,13,17987,,원,claude-agent,no,paid_date = 공탁일,22
+19065,2024유대1559,163492283,표 14,17,consignment,sales_close_date,2022-07-31,2022-09-09,2022-09-20,3918023,11,18302,,원,claude-agent,no,paid_date = 공탁일,22
+19065,2024유대1559,163492283,표 14,18,consignment,sales_close_date,2022-09-30,2022-11-09,2022-11-18,3353354,9,12816,,원,claude-agent,no,paid_date = 공탁일,22
+19065,2024유대1559,163492283,표 14,19,consignment,sales_close_date,2022-10-31,2022-12-10,2022-12-20,3180607,10,13507,,원,claude-agent,no,paid_date = 공탁일,22
+19065,2024유대1559,163492283,표 14,20,consignment,sales_close_date,2024-01-31,2024-03-11,2024-05-17,990739,67,28289,,원,claude-agent,no,paid_date = 공탁일,23
+19065,2024유대1559,163492283,표 14,21,consignment,sales_close_date,2024-02-29,2024-04-09,2024-05-17,1435940,38,23172,,원,claude-agent,no,paid_date = 공탁일,23
+19065,2024유대1559,163492283,표 14,22,consignment,sales_close_date,2024-03-31,2024-05-10,2024-05-17,1066943,7,3171,,원,claude-agent,no,paid_date = 공탁일,23
+19147,2024유대1554,164088685,표 8,1,direct,goods_received_date,2023-08-01~2023-08-15,2023-10-04~2023-10-16,,1980000,20,16816,,원,claude-agent,no,aggregate range row: base = 상품 수령기간; principal = 지연건의 매입총액; 지연건수 2; delay column = 최소~최대,1
+19147,2024유대1554,164088685,표 8,2,direct,goods_received_date,2023-08-16~2023-08-31,2023-10-16~2023-10-30,,2970000,7~14,11769,,원,claude-agent,no,aggregate range row; 지연건수 3,1
+19147,2024유대1554,164088685,표 8,3,direct,goods_received_date,2023-09-01~2023-09-15,2023-10-31~2023-11-14,,138678934,3~4,228436,,원,claude-agent,no,aggregate range row; 지연건수 29; rows of 연번 3..18 elided (⋮) after this row,2
+19147,2024유대1554,164088685,표 8,4,direct,goods_received_date,2021-05-01~2021-05-15,2021-06-30~2021-07-14,,105271071,90~91,4066640,,원,claude-agent,no,aggregate range row; 지연건수 35,19
+19147,2024유대1554,164088685,표 8,5,direct,goods_received_date,2021-05-16~2021-05-30,2021-07-15~2021-07-29,,214013119,78~85,7723349,,원,claude-agent,no,aggregate range row; 지연건수 113; period end printed as 2021.05.30,19
+19147,2024유대1554,164088685,표 8,6,direct,goods_received_date,2022-07-16~2022-07-30,2022-09-14~2022-09-28,,57420331,15~22,480600,,원,claude-agent,no,aggregate range row; 지연건수 195; period end printed as 2022.07.30,19
+19147,2024유대1554,164088685,표 8,7,direct,goods_received_date,2021-07-01~2021-07-15,2021-08-30~2021-09-13,,12446709,29~39,185047,,원,claude-agent,no,aggregate range row; 지연건수 145,20
+19147,2024유대1554,164088685,표 8,8,direct,goods_received_date,2021-07-16~2021-07-30,2021-09-14~2021-09-28,,10454024,14~28,94435,,원,claude-agent,no,aggregate range row; 지연건수 156; period end printed as 2021.07.30,20
+19147,2024유대1554,164088685,표 8,9,direct,goods_received_date,2021-09-16~2021-09-30,2021-11-15~2021-11-29,,277779350,5~7,787483,,원,claude-agent,no,aggregate range row; 지연건수 127,21
+19147,2024유대1554,164088687,표 9,1,consignment,sales_close_date,2021-08-31,,2022-07-05,66078,268,7520,,원,claude-agent,no,거래유형 위수탁; 월 판매마감금액 199300; principal = 미지급대금; paid_date = 공탁일·지급일 (merged cell for 연번 1),1
+19147,2024유대1554,164088687,표 9,2,consignment,sales_close_date,2021-08-31,,2022-07-05,162932,268,18543,,원,claude-agent,no,위수탁; 월 판매마감금액 153900,1
+19147,2024유대1554,164088687,표 9,3,consignment,sales_close_date,2021-09-30,,2022-07-05,122320,238,12363,,원,claude-agent,no,위수탁; 월 판매마감금액 139000,1
+19147,2024유대1554,164088687,표 9,4,consignment,sales_close_date,2021-10-31,,2022-07-05,5192,207,456,,원,claude-agent,no,위수탁; 월 판매마감금액 5900,1
+19147,2024유대1554,164088687,표 9,5,consignment,sales_close_date,2021-10-31,,2022-07-05,245050,207,21541,,원,claude-agent,no,위수탁; 월 판매마감금액 280000,1
+19147,2024유대1554,164088687,표 9,6,consignment,sales_close_date,2021-10-31,,2022-07-05,40800,207,3586,,원,claude-agent,no,위수탁; 월 판매마감금액 35000,1
+19147,2024유대1554,164088687,표 9,7,consignment,sales_close_date,2021-11-30,,2022-07-05,17600,177,1323,,원,claude-agent,no,위수탁; 월 판매마감금액 20000,1
+19147,2024유대1554,164088687,표 9,8,consignment,sales_close_date,2021-11-30,,2022-07-05,36400,177,2736,,원,claude-agent,no,위수탁; 월 판매마감금액 30000,1
+19147,2024유대1554,164088687,표 9,9,consignment,sales_close_date,2021-12-31,,2022-07-05,4312,146,267,,원,claude-agent,no,위수탁; 월 판매마감금액 4900,1
+19147,2024유대1554,164088687,표 9,10,consignment,sales_close_date,2021-12-31,,2022-07-05,34072,146,2112,,원,claude-agent,no,위수탁; 월 판매마감금액 29220,1
+19147,2024유대1554,164088687,표 9,11,consignment,sales_close_date,2021-01-31,,2021-03-31,,19,3332,,원,claude-agent,no,위수탁; 월 판매마감금액 8260000; 미지급대금 printed as '-' (principal blank),2
+19147,2024유대1554,164088687,표 9,12,consignment,sales_close_date,2023-02-28,,2023-05-02,14790,23,144,,원,claude-agent,no,위수탁; 월 판매마감금액 17100; rows of 연번 4..56 elided (⋮) after this row,3
+19147,2024유대1554,164088687,표 9,13,consignment,sales_close_date,2021-11-30,,2022-03-10,1000000,10,3822,,원,claude-agent,no,특약매입; 월 판매마감금액 16181500,57
+19147,2024유대1554,164088687,표 9,14,consignment,sales_close_date,2022-09-30,,2022-11-10,1813790,1,770,,원,claude-agent,no,특약매입; 월 판매마감금액 2591100,58
+19147,2024유대1554,164088687,표 9,15,consignment,sales_close_date,2022-06-30,,2022-10-11,900000,13,4968,,원,claude-agent,no,특약매입; 월 판매마감금액 33981000,59
+19299,2025신하0954,167807599,표 11,1,subcontract,object_received_date,2022-07-31,2022-09-30,2022-10-04,8349,5,17,,천원,claude-agent,no,"base column header '목적물수령일(세금계산서 발행일)' (the decision equates the two); due column = 기산일; amounts in 천 원",1
+19299,2025신하0954,167807599,표 11,2,subcontract,object_received_date,2022-09-30,2022-11-30,2022-11-30,4620,1,1,,천원,claude-agent,no,due column = 기산일,2
+19299,2025신하0954,167807599,표 11,3,subcontract,object_received_date,2022-09-30,2022-11-30,2022-12-30,78320,31,1030,,천원,claude-agent,no,due column = 기산일,3
+19299,2025신하0954,167807599,표 11,4,subcontract,object_received_date,2023-01-01,2023-03-03,2023-03-06,57058,4,96,,천원,claude-agent,no,due column = 기산일,4
+19299,2025신하0954,167807599,표 11,5,subcontract,object_received_date,2023-07-31,2023-10-05,2023-10-16,150700,12,767,,천원,claude-agent,no,due column = 기산일,5
+19299,2025신하0954,167807599,표 11,6,subcontract,object_received_date,2024-07-31,2024-10-01,2024-10-15,125125,15,797,,천원,claude-agent,no,due column = 기산일,6
+19299,2025신하0954,167807599,표 11,7,subcontract,object_received_date,2024-09-30,2024-11-30,2024-12-02,25850,3,32,,천원,claude-agent,no,due column = 기산일; interest has footnote 23 (어음 지급분),7
+19299,2025신하0954,167807599,표 11,8,subcontract,object_received_date,2024-09-30,2024-11-30,2025-01-24,34650,56,824,,천원,claude-agent,no,due column = 기산일,7
+16947,2021유통1898,133422117,표 5,1,consignment,sales_close_date,2019-09-30,2019-11-12,2021-10-15,109791189,704,32823054,,원,claude-agent,no,"UNCERTAIN: low-resolution source (652x300 px), glyphs 3/8/9/0 hard to tell; base month read 09 (crop also resembles 08); principal leading '109' uncertain; due column = 기산일 (footnote 8); paid_date = 공탁일; interest 지급일 2021-10-15",1
+16947,2021유통1898,133422117,표 5,2,consignment,sales_close_date,2020-06-30,2020-08-11,2021-10-15,7938,431,1453,,원,claude-agent,no,UNCERTAIN: low-resolution source; principal digits (7938 vs 7988) uncertain; due column = 기산일; paid_date = 공탁일,2
+16947,2021유통1898,133422117,표 5,3,consignment,sales_close_date,2020-07-31,2020-09-10,2021-10-15,8201,401,1397,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일; paid_date = 공탁일,2
+16947,2021유통1898,133422117,표 5,4,consignment,sales_close_date,2020-01-31,2020-03-12,2021-10-15,1691,583,419,,원,claude-agent,no,UNCERTAIN: low-resolution source; principal 1691 vs 1681 uncertain; due column = 기산일; paid_date = 공탁일,3
+16947,2021유통1898,133422117,표 5,5,consignment,sales_close_date,2019-06-30,2019-08-10,2021-10-15,17884200,798,6060539,,원,claude-agent,no,UNCERTAIN: low-resolution source; principal read 17884200 on 4x crop (first read 17894200); due column = 기산일; paid_date = 공탁일,4
+16947,2021유통1898,133422117,표 5,6,consignment,sales_close_date,2019-03-31,2019-05-11,2021-10-15,298736,889,112779,,원,claude-agent,no,UNCERTAIN: low-resolution source; principal 298736 vs 238736 uncertain; due column = 기산일; paid_date = 공탁일,5
+16947,2021유통1898,133422117,표 5,7,consignment,sales_close_date,2019-04-30,2019-06-11,2021-10-15,119909,858,43690,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일; paid_date = 공탁일,5
+16947,2021유통1898,133422119,표 6,1,consignment,sales_close_date,2017-09-30,2017-11-10,2020-02-28,6584,841,2351,,원,claude-agent,no,"UNCERTAIN: low-resolution source (652x394 px); base month read 09 (glyph resembles 08; 08-30 is not a month end); interest = 미지급 지연이자 (table '지연이자 미지급 내역'); due column = 기산일",1
+16947,2021유통1898,133422119,표 6,2,consignment,sales_close_date,2018-08-31,2018-10-11,2020-02-28,6584,506,1415,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,1
+16947,2021유통1898,133422119,표 6,3,consignment,sales_close_date,2018-11-30,2019-01-10,2020-02-28,4680,415,827,,원,claude-agent,no,UNCERTAIN: low-resolution source; principal 4680 vs 4690 uncertain; due column = 기산일,1
+16947,2021유통1898,133422119,표 6,4,consignment,sales_close_date,2019-06-30,2019-08-10,2019-10-10,2608957,62,68691,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,2
+16947,2021유통1898,133422119,표 6,5,consignment,sales_close_date,2019-07-31,2019-09-10,2019-10-10,2793978,31,36781,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,2
+16947,2021유통1898,133422119,표 6,6,consignment,sales_close_date,2020-02-29,2020-04-10,2020-07-24,3843453,106,173008,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,3
+16947,2021유통1898,133422119,표 6,7,consignment,sales_close_date,2020-03-31,2020-05-12,2020-08-24,6236834,105,278094,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,3
+16947,2021유통1898,133422119,표 6,8,consignment,sales_close_date,2020-04-30,2020-06-10,2020-08-24,1581502,76,51041,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,3
+16947,2021유통1898,133422119,표 6,9,consignment,sales_close_date,2020-12-31,2021-02-10,2021-02-19,100561891,10,427044,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,4
+16947,2021유통1898,133422119,표 6,10,consignment,sales_close_date,2019-09-30,2019-11-12,2020-07-15,4461707,247,467990,,원,claude-agent,no,UNCERTAIN: low-resolution source; base month read 09 (glyph resembles 08); due column = 기산일,5
+16947,2021유통1898,133422119,표 6,11,consignment,sales_close_date,2019-08-31,2019-10-11,2020-07-15,6538293,279,774653,,원,claude-agent,no,UNCERTAIN: low-resolution source; due column = 기산일,5

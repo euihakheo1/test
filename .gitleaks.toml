@@ -1,0 +1,19 @@
+# gitleaks configuration (gitleaks v8.30; `gitleaks git --redact`, `gitleaks dir --redact`).
+# Default rules stay on. Allowlists are exceptions for hand-written test inputs only and must be
+# scoped to one rule, one path and the exact line shape, so a real key added anywhere else (or a
+# different line in the same file) is still reported.
+
+title = "jettae"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = """E2E sign-up password for throwaway accounts created in a disposable SQLite DB
+(frontend/e2e/backend.mjs deletes it). It is not a credential for any real system; the test needs
+a fixed literal because sign-up and later logins run in separate Playwright tests."""
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^frontend/e2e/flow\.spec\.ts$''']
+regexTarget = "line"
+regexes = ['''(?m)^const PASSWORD = "[^"]{8,64}";$''']

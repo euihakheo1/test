@@ -1,0 +1,74 @@
+# jettae: PostgreSQL + one-shot migration + API + worker (JETTAE_ENV=prod).
+#   cd deploy && cp .env.example .env  (set real values)  &&  docker compose up -d --build
+# The web UI (Next.js) and the HTTPS reverse proxy are not part of this file: the proxy sends
+# /api/ to the API port below and everything else to `next start` (README "운영 배포").
+# The prod startup check refuses to start without a strong JWT secret, a PostgreSQL URL and
+# https JETTAE_ALLOWED_ORIGINS, so the :? guards below fail early with the variable name.
+# NOTE: written for Docker Compose v2; not executed on the development machine (no Docker).
+name: jettae
+
+x-app: &app
+  image: jettae:local
+  build:
+    context: ..
+    dockerfile: deploy/Dockerfile
+  environment: &app-env
+    JETTAE_ENV: prod
+    JETTAE_DATABASE_URL: postgresql+psycopg://jettae:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/jettae
+    JETTAE_JWT_SECRET: ${JETTAE_JWT_SECRET:?set JETTAE_JWT_SECRET (>= 32 chars)}
+    JETTAE_BLOB_DIR: /data/blobs
+    JETTAE_ALLOWED_ORIGINS: ${JETTAE_ALLOWED_ORIGINS:?set JETTAE_ALLOWED_ORIGINS (https origin of the web UI)}
+    JETTAE_MAX_UPLOAD_BYTES: ${JETTAE_MAX_UPLOAD_BYTES:-20971520}
+    JETTAE_WORKER_CONCURRENCY: ${JETTAE_WORKER_CONCURRENCY:-2}
+    JETTAE_LLM_MODE: ${JETTAE_LLM_MODE:-offline}
+    JETTAE_LLM_BUDGET_KRW: ${JETTAE_LLM_BUDGET_KRW:-0}
+  volumes:
+    - blobs:/data/blobs
+  restart: unless-stopped
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: jettae
+      POSTGRES_USER: jettae
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U jettae -d jettae"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  migrate:
+    <<: *app
+    command: ["jettae", "api", "migrate"]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    command: ["jettae", "api", "serve", "--host", "0.0.0.0", "--port", "8000", "--workers", "2"]
+    ports:
+      # published on the host's loopback only: TLS and public traffic go through the reverse proxy
+      - "127.0.0.1:${JETTAE_API_PORT:-8000}:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: ["jettae", "worker", "run"]
+    healthcheck:
+      disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  blobs:

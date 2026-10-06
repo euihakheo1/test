@@ -1,0 +1,6 @@
+# Persistence/API/worker task: no new runtime dependency needed (all planned deps used:
+# sqlalchemy, alembic, fastapi, uvicorn, python-multipart, argon2-cffi, pyjwt, pydantic-settings,
+# psycopg[binary] via the `postgres` extra).
+# Optional, test-only, NOT added to pyproject: used through `uv run --with pgserver` to start a
+# throw-away PostgreSQL for tests/api/test_api_postgres.py (deploy/run_pg_tests.py).
+# pgserver>=0.1
