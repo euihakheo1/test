@@ -1423,3 +1423,10 @@ before; the cause of these 47 was not confirmed.
 - Repo-local git settings: `core.longpaths=true` (object writes failed with "Filename too long" in
   the long scratch path), identity `jettae-maintainer` with a GitHub noreply address.
 - Commit, history scan and fresh-clone results: `docs/release-verification.md`.
+- Commits `af18802` (initial) and `9cb638f` (gitleaks allowlist fix: `dir` mode on Windows uses `\`
+  paths and CRLF). Fresh clone of `9cb638f` with a new virtualenv, README steps as written:
+  `uv sync --frozen --all-extras`, `cp .env.example .env`, `jettae api migrate`, `pytest -q`
+  614 passed / 8 skipped, `demo run` 54 MATCHED + 23 INSUFFICIENT_EVIDENCE, `npm ci`, lint,
+  typecheck (no `.next`), 40 unit tests, build, `e2e:install`, E2E 3 passed; `git status` clean
+  afterwards. gitleaks (history and exported tree) and `scripts/secret_scan.py`: 0 findings.
+  Details and the not-verified list: `docs/release-verification.md`.
