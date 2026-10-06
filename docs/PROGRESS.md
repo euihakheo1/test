@@ -1492,3 +1492,39 @@ before; the cause of these 47 was not confirmed.
   CI configuration, paid LLM calls and model quality, BPI 2019 (E4), real Hometax/bank exports,
   memory/time of the largest XLSX that passes every cap.
 
+## 2026-10-06 UTC — independent final review and private vLLM runtime
+
+Base GitHub commit: `874ca5c372ef160c1e0756495c34224b79283871`.
+Verified code commit: `f7fceebbce7499c96b5a7520dabde28e0f451bda`.
+Retained the completed security, parser, browser-session and Agent-web work. Added a private
+text-only vLLM adapter, explicit local mode across CLI/API/worker/UI, zero external API charge
+without opening the paid-provider gate, uncached local execution by default, SDK HTTP protocol
+and web-worker regression tests. Added model revision/config examples, safe env generation,
+WSL/local instructions, production web/Caddy/vLLM overlays, correct backend extras and Docker
+context exclusions. Added the Docker build/config job; retained existing offline CI guards.
+No LICENSE change, no real secret/user data/model weights committed, no GitHub push.
+
+Direct commands/results (Linux, Python 3.12, uv 0.12.19, Node 24.19.0, npm 11.9.0):
+- Fresh `git clone --no-local`, `uv sync --frozen --all-extras`, `npm ci`; initially no env files,
+  DB, venv, node_modules or .next. `uv run jettae api migrate` and `uv run jettae demo run
+  --out-dir var/demo` completed; generated private demo files stayed ignored.
+- Fresh `uv run pytest -q`: **677 passed, 9 skipped, 1 warning**, 62.96s. Eight PostgreSQL-only
+  skips and one Windows-only skip. `uv run ruff check .`, `uv run ruff format --check .`
+  (275 files), `uv run mypy src` (153 files): clean.
+- Fresh `npm run typecheck` (no generated .next before it), `npm run lint`, `npm test`
+  (45 passed), `npm run build`: passed.
+- SQLite Alembic heads/upgrade/downgrade base/upgrade/check completed, no new operations.
+- Real API/worker/Next processes: login/public page/health/readiness 200; HttpOnly cookies,
+  no body tokens, CSRF refusal 403, refresh 200, logout 204 and revoked session 401.
+- `JETTAE_NEXT_STANDALONE=1 npm run build`, generated server.js + static runtime: login 200,
+  nine referenced static files 200. Docker itself was not run.
+- `uv run python scripts/secret_scan.py`: code-commit publish set 383, five commits/450 blobs,
+  findings 0; gitleaks 8.30.1 `dir` and `git` with redaction: no leaks found.
+- pip-audit 2.10.1 (PyPI and OSV): 103 environment-applicable packages, no known vulnerabilities.
+  Initial tool download timeout recovered with a local tool-wheel directory. npm production
+  audit 0; full audit five high, unchanged dev-only braces chain. See dependency-audit.md.
+
+Not verified: PostgreSQL execution (pgserver blocked on OS user creation/transition), browser
+E2E (Chromium CDN download was HTML, three launch failures), GPU model execution/LLM quality,
+Docker/Compose/HTTPS, actual bank/Hometax exports, BPI 2019, transcript truth and peak/long-run
+resource use. See FINAL_VERIFICATION.md for exact commands, boundaries and run instructions.

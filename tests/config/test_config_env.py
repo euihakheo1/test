@@ -185,6 +185,36 @@ def test_prod_live_llm_needs_budget_and_shared_budget_db(env):
     assert require_valid_environment("worker").is_prod
 
 
+def test_local_mode_requires_private_provider_in_dev(env):
+    os.environ["JETTAE_LLM_MODE"] = "local"
+    os.environ["JETTAE_LLM_PROVIDER"] = "openai"
+    with pytest.raises(SystemExit, match="vllm"):
+        require_valid_environment("worker")
+    os.environ["JETTAE_LLM_PROVIDER"] = "vllm"
+    os.environ["JETTAE_VLLM_BASE_URL"] = "https://api.example.com/v1"
+    with pytest.raises(SystemExit, match="private"):
+        require_valid_environment("api")
+
+
+def test_prod_local_requires_strong_key_without_paid_budget(env):
+    _prod(
+        JETTAE_LLM_MODE="local",
+        JETTAE_LLM_PROVIDER="vllm",
+        JETTAE_VLLM_BASE_URL="http://vllm:8001/v1",
+        JETTAE_LLM_BUDGET_KRW="0",
+        JETTAE_VLLM_API_KEY=None,
+    )
+    with pytest.raises(SystemExit, match="JETTAE_VLLM_API_KEY"):
+        require_valid_environment("worker")
+    private_key = secrets.token_urlsafe(48)
+    os.environ["JETTAE_VLLM_API_KEY"] = private_key
+    assert require_valid_environment("worker").is_prod
+    os.environ["JETTAE_VLLM_BASE_URL"] = "http://169.254.169.254/v1"
+    with pytest.raises(SystemExit) as exc:
+        require_valid_environment("worker")
+    assert private_key not in str(exc.value)
+
+
 def test_all_prod_problems_are_reported_together(env):
     os.environ["JETTAE_ENV"] = "prod"
     problems = environment_problems(Settings(), "api", {})

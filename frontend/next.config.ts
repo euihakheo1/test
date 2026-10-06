@@ -15,6 +15,8 @@ import pkg from "./package.json" with { type: "json" };
 const apiOrigin = (process.env.JETTAE_API_ORIGIN ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
 
 const nextConfig: NextConfig = {
+  // Docker runs the emitted server.js; local/E2E builds retain the next start contract.
+  ...(process.env.JETTAE_NEXT_STANDALONE === "1" ? { output: "standalone" as const } : {}),
   poweredByHeader: false,
   distDir: process.env.JETTAE_NEXT_DIST_DIR || ".next",
   typescript: { tsconfigPath: process.env.JETTAE_NEXT_TSCONFIG || "tsconfig.json" },

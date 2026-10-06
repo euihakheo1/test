@@ -202,3 +202,29 @@ jobs:
           name: playwright-report
           path: frontend/.e2e-tmp/report
           retention-days: 7
+
+  docker-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [backend, frontend]
+    steps:
+      - name: Assert paid LLM calls are off
+        run: |
+          test -z "${ANTHROPIC_API_KEY:-}" && test -z "${OPENAI_API_KEY:-}"
+          test "$JETTAE_LLM_MODE" = offline && test "$JETTAE_LLM_BUDGET_KRW" = 0
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: "3.12"
+      - run: uv sync --frozen --all-extras
+      - name: Create throwaway deployment settings (values are not printed)
+        run: uv run python deploy/init_env.py prod --domain ci.example.com
+      - name: Validate complete Compose configuration (no values printed)
+        run: >-
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml
+          -f deploy/compose.web.yml -f deploy/compose.vllm.yml config --quiet
+      - name: Build API and standalone web images (no GPU / model inference)
+        run: >-
+          docker compose --env-file deploy/.env -f deploy/docker-compose.yml
+          -f deploy/compose.web.yml build api web

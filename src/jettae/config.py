@@ -305,13 +305,29 @@ def environment_problems(
 ) -> list[str]:
     """Configuration errors for ``component`` under ``settings.env``. Empty = OK.
 
-    Only ``prod`` has requirements beyond a valid environment name. Each component is checked
+    LLM mode and local endpoint restrictions apply in every environment. Deployment secrets,
+    HTTPS and PostgreSQL are required in ``prod``. Each component is checked
     for what it actually uses: a source download does not need the JWT secret, and the
     worker does not sign tokens."""
     e = os.environ if environ is None else environ
+    mode = (e.get("JETTAE_LLM_MODE") or "offline").strip().lower()
+    llm_problems: list[str] = []
+    if component.split(":", 1)[0] in ("api", "worker", "mcp"):
+        if mode not in ("offline", "replay", "live", "local"):
+            llm_problems.append("JETTAE_LLM_MODE must be offline, replay, live or local")
+        if mode == "local":
+            from jettae.llm.vllm import local_configuration_problem
+
+            problem = local_configuration_problem(e)
+            if problem:
+                llm_problems.append(problem)
+            if settings.is_prod:
+                problem = jwt_secret_problem(e.get("JETTAE_VLLM_API_KEY"))
+                if problem:
+                    llm_problems.append(problem.replace("JETTAE_JWT_SECRET", "JETTAE_VLLM_API_KEY"))
     if not settings.is_prod:
-        return []
-    problems: list[str] = []
+        return llm_problems
+    problems: list[str] = llm_problems
     base = component.split(":", 1)[0]
     if base in ("api", "mcp"):
         p = jwt_secret_problem(settings.jwt_secret)

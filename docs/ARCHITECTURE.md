@@ -37,6 +37,12 @@ docs/            SPEC.md ARCHITECTURE.md PROGRESS.md ADR/ ip/ runbook.md eval_pr
 
 ## Core contracts (stable interfaces; change a signature only together with its callers and a PROGRESS.md note)
 
+- **Private inference (2026-10-07)**: `LLMMode.LOCAL` uses only `VLLMProvider` over a private
+  `/v1` endpoint. No paid budget reservation, external-provider fallback, redirects or environment
+  proxies. Schema, tenant replay namespace and Agent step/tool/token caps remain in force. `live`
+  still requires a positive paid budget. Local cache reuse is explicit; the default actually infers.
+  API/worker configuration, capabilities and the browser all distinguish local from offline/replay/live.
+
 - `Money(amount: int, currency: str = "KRW")` – minor units, arithmetic only between same currency, `Decimal` rate math with explicit rounding mode.
 - `SourceSpan(doc_version_id, locator: dict, excerpt: str)` – locator e.g. `{"sheet": "Sheet1", "row": 12, "col": "D"}` or `{"page": 3, "char_start": 10, "char_end": 42}`.
 - `Fact(id, tenant_id, kind, value, span, extractor, observed_at, valid_from, valid_to, supersedes)`.
@@ -158,7 +164,7 @@ docs/            SPEC.md ARCHITECTURE.md PROGRESS.md ADR/ ip/ runbook.md eval_pr
 - **Agent investigations** (`agents/investigations.py`, `db/repos_investigations.py`,
   `api/routes_investigations.py`, migration 0006): the API creates the `agent_investigations` row
   and its `investigate_decision` job in one transaction (`JOB_TYPES` of `POST /jobs` excludes this
-  type on purpose). `offline` = deterministic heuristic planner, no LLM; `replay`/`live` go through
+  type on purpose). `offline` = deterministic heuristic planner, no LLM; `replay`/`live`/`local` go through
   the LLM gateway; `live` is decided by the worker (`live_capability`) and otherwise ends
   `refused`. Findings are built by code from the stored decision and typed tool results, never from
   model text, and never change engine numbers.
@@ -179,4 +185,3 @@ docs/            SPEC.md ARCHITECTURE.md PROGRESS.md ADR/ ip/ runbook.md eval_pr
   a `./.env` cannot change test results or expose keys to tests.
 - **Line endings** (`.gitattributes`): text files are LF on every OS, so evaluation provenance
   hashes (seeds, engine sources) are the same in a Windows checkout; evaluation writers write LF.
-

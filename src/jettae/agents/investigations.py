@@ -4,6 +4,7 @@
 Modes:
 
 - ``offline``: :class:`HeuristicPlanner` (deterministic, no LLM call, no cost);
+- ``local``: a private text-only vLLM server, enabled by the server configuration;
 - ``replay``: :class:`LLMPlanner` over a replay-only gateway; a missing recording ends the
   run as ``failed`` (``replay_miss``) instead of calling a model;
 - ``live``: :class:`LLMPlanner` over the live gateway, only when the *server* settings allow
@@ -43,9 +44,9 @@ from jettae.llm.budget import budget_limit_problem
 from jettae.llm.gateway import CallRecord, LLMGateway, LLMMode, gateway_from_env
 
 Strategy = Literal["single", "roles"]
-Mode = Literal["offline", "replay", "live"]
+Mode = Literal["offline", "replay", "live", "local"]
 STRATEGIES: tuple[str, ...] = ("single", "roles")
-MODES: tuple[str, ...] = ("offline", "replay", "live")
+MODES: tuple[str, ...] = ("offline", "replay", "live", "local")
 GatewayFactory = Callable[[LLMMode], LLMGateway]
 
 # Same caps for both strategies (SPEC §5: same input, tools and budget).
@@ -118,6 +119,13 @@ def capabilities(env: Mapping[str, str] | None = None) -> dict[str, Any]:
     out: dict[str, Any] = {"modes_enabled": modes, "live_enabled": live.enabled}
     if not live.enabled:
         out["live_disabled_reason"] = live.reason
+    e = os.environ if env is None else env
+    if (e.get("JETTAE_LLM_MODE") or "offline").strip().lower() == "local":
+        from jettae.llm.vllm import local_configuration_problem
+
+        if local_configuration_problem(e) is None:
+            modes.append("local")
+            out["local_enabled"] = True
     return out
 
 
@@ -249,6 +257,12 @@ def investigate(
     if mode == "offline":
         planner = HeuristicPlanner()
     else:
+        if mode == "local":
+            from jettae.llm.vllm import local_configuration_problem
+
+            problem = local_configuration_problem(os.environ if env is None else env)
+            if problem:
+                return InvestigationOutcome.stopped("refused", "local_disabled", problem)
         if mode == "live":
             cap = live_capability(env)
             if not cap.enabled:

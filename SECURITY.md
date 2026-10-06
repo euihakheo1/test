@@ -48,3 +48,8 @@
 검증한 범위와 검증하지 못한 범위는 `README.md`의 "구현 · 검증 · 미검증" 표와 `docs/PROGRESS.md`에
 있습니다. 테스트 통과는 그 범위의 동작만 뜻하며 운영 보안 전체를 보증하지 않습니다. 의존성 검사 결과는
 `docs/security/dependency-audit.md`에 있습니다.
+
+로컬 추론 서버도 공개 포트로 열지 않습니다. `compose.vllm.yml`은 vLLM 포트를 호스트에 게시하지
+않고, 로컬 실행은 loopback에만 바인딩합니다. vLLM 인증키를 설정했다고 해서 모든 추론 서버
+관리 경로가 인증된다고 가정하지 않습니다. 실제 GPU 서버·HTTPS·컨테이너 보안은 별도 검증 대상이며,
+이번 검토 범위는 `docs/FINAL_VERIFICATION.md`에 기록합니다.

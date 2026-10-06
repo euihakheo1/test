@@ -1,0 +1,10 @@
+.git
+**/node_modules
+**/.next
+**/.e2e-tmp
+**/.env
+**/.env.*
+**/*.log
+.venv
+var
+data/raw

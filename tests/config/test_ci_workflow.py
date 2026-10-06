@@ -51,3 +51,14 @@ def test_compose_api_trusts_only_its_network_gateway_for_forwarded_headers() -> 
     assert api_env["FORWARDED_ALLOW_IPS"] == gateway
     assert api_env["JETTAE_ENV"] == "prod"  # the merged app environment is kept
     assert "*" not in api_env["FORWARDED_ALLOW_IPS"]
+
+
+def test_private_inference_has_no_public_port_and_the_proxy_is_explicitly_trusted() -> None:
+    root = REPO_ROOT / "deploy"
+    inference = yaml.safe_load((root / "compose.vllm.yml").read_text("utf-8"))
+    services = inference["services"]
+    assert not services["vllm"].get("ports")
+    assert services["worker"]["environment"]["JETTAE_VLLM_BASE_URL"] == "http://vllm:8001/v1"
+    web = yaml.safe_load((root / "compose.web.yml").read_text("utf-8"))
+    proxy_ip = web["services"]["proxy"]["networks"]["default"]["ipv4_address"]
+    assert web["services"]["api"]["environment"]["FORWARDED_ALLOW_IPS"] == proxy_ip

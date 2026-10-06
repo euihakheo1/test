@@ -28,7 +28,8 @@ settings. Several workers are fine; jobs are claimed with leases, so no job runs
 
 The file is loaded into the process environment, so adapters that read `os.environ` directly
 (LLM, OCR, sources) see the same values. The examples are `.env.example` (local, dev),
-`.env.live-llm.example` (paid LLM) and `.env.prod.example` (prod); all secret slots hold fake
+`.env.live-llm.example` (paid LLM), `.env.vllm.example` (private local inference) and
+`.env.prod.example` (prod); all secret slots hold fake
 `change-me-...` values.
 
 ### Startup check
@@ -43,8 +44,9 @@ The file is loaded into the process environment, so adapters that read `os.envir
 | `api` | `JETTAE_ALLOWED_ORIGINS` empty or not https; `JETTAE_COOKIE_SECURE=false` |
 | `sources ftc`, `sources law` | `JETTAE_DRF_OC` missing, `test` or a placeholder |
 | `api`, `worker`, `mcp` with `JETTAE_LLM_MODE=live` | `JETTAE_LLM_BUDGET_KRW` not a finite number in (0, 10 000 000 000] (`Infinity`, `1e400`, `NaN` refused), or `JETTAE_LLM_BUDGET_DB` not PostgreSQL or with a placeholder password |
+| `api`, `worker`, `mcp` with `JETTAE_LLM_MODE=local` | Provider is not `vllm`, endpoint is outside the allowed private addresses, or (in prod) the vLLM key is missing, a placeholder or weak |
 
-The message lists every problem by variable name and never prints values. A wildcard origin is
+Local mode/provider/endpoint checks also run in dev/test. The message lists every problem by variable name and never prints values. A wildcard origin is
 refused in every environment. `jettae demo run` additionally refuses anything but `dev`.
 
 ### Variables (`JETTAE_` prefix)
@@ -156,10 +158,12 @@ which serialises all writers. Fine for one developer; use PostgreSQL for anythin
   settlement_line_id?}`. `GET /evidence-links` lists confirmations; `DELETE /evidence-links/{id}`
   withdraws one. Both recompute incrementally.
 - **Agent investigations.** `POST /decisions/{id}/investigations {strategy: single|roles, mode:
-  offline|replay|live}` -> 202 `{investigation_id, job_id}`; `GET /decisions/{id}/investigations`;
+  offline|replay|live|local}` -> 202 `{investigation_id, job_id}`; `GET /decisions/{id}/investigations`;
   `GET /investigations/capabilities`. `live` runs only when the worker's settings allow it
   (`JETTAE_LLM_MODE=live`, budget > 0, and in prod a PostgreSQL `JETTAE_LLM_BUDGET_DB`); otherwise
-  the investigation ends `refused` without a provider call. Findings never change engine numbers.
+  the investigation ends `refused` without a provider call. `local` requires server mode `local`,
+  provider `vllm` and a private endpoint; a browser request cannot enable it. Local inference
+  has no external API charge and does not enable paid providers. Findings never change engine numbers.
 - **Idempotency.** `Idempotency-Key` works on `POST /documents`, `/jobs`, `/changes`,
   `/changes/upload`, `/decisions/{id}/approvals`, `/decisions/{id}/evidence-link`,
   `/decisions/{id}/investigations` and `/document-versions/{id}/mapping`. Same key and request:
@@ -224,7 +228,10 @@ never served. Approvals are append-only and decisions keep their history.
 
 `deploy/`: `Dockerfile` (one image for API and worker), `docker-compose.yml` (`db` postgres:16,
 one-shot `migrate`, `api`, `worker`, all `JETTAE_ENV=prod`), `.env.example`, `Dockerfile.dockerignore`.
-The web UI and the reverse proxy are not included.
+The base file contains only the backend. Add `compose.web.yml` for the Next standalone server
+and Caddy HTTPS proxy, and `compose.vllm.yml` for private GPU inference. The ordered setup is
+in [GETTING_STARTED.md](GETTING_STARTED.md). These deployment overlays have not been run in this
+review environment; see [FINAL_VERIFICATION.md](FINAL_VERIFICATION.md).
 
 ```bash
 cd deploy && cp .env.example .env    # replace every change-me value and the origin

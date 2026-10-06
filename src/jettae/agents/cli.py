@@ -1,4 +1,4 @@
-"""``jettae agent run --strategy single|roles --decision <id> --mode replay|live``.
+"""Agent CLI; for example ``jettae agent run --decision <id> --strategy single --mode local``.
 
 The tenant comes from the API token (``--token`` or ``JETTAE_API_TOKEN``); the database from
 ``JETTAE_DATABASE_URL``. ``--planner heuristic`` runs the deterministic planner without any
@@ -37,7 +37,7 @@ def _exit_code(report: AgentReport) -> int:
 def run_cmd(
     decision: Annotated[str, typer.Option("--decision", help="결정 id (예: dec:I1)")],
     strategy: Annotated[str, typer.Option("--strategy", help="single | roles")] = "single",
-    mode: Annotated[str, typer.Option("--mode", help="replay | live")] = "replay",
+    mode: Annotated[str, typer.Option("--mode", help="replay | live | local")] = "replay",
     planner_name: Annotated[str, typer.Option("--planner", help="llm | heuristic")] = "llm",
     token: Annotated[
         str | None, typer.Option("--token", envvar="JETTAE_API_TOKEN", help="API 토큰 jtk_...")
@@ -52,8 +52,8 @@ def run_cmd(
     """결정 하나를 Agent로 검토(엔진 수치는 코드가 계산, 승인·외부 발송 없음)."""
     if strategy not in ("single", "roles"):
         raise typer.BadParameter("--strategy must be single or roles")
-    if mode not in ("replay", "live"):
-        raise typer.BadParameter("--mode must be replay or live")
+    if mode not in ("replay", "live", "local"):
+        raise typer.BadParameter("--mode must be replay, live or local")
     if orchestrator not in ("auto", "langgraph", "fallback"):
         raise typer.BadParameter("--orchestrator must be auto, langgraph or fallback")
     session = AgentSession.open()

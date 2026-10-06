@@ -90,7 +90,7 @@ export interface MeResponse {
 
 // ------------------------------------------------------------------ investigations (Agent)
 export type InvestigationStrategy = "single" | "roles";
-export type InvestigationMode = "offline" | "replay" | "live";
+export type InvestigationMode = "offline" | "replay" | "live" | "local";
 export type InvestigationStatus = "queued" | "running" | "succeeded" | "failed" | "refused";
 
 export interface InvestigationCitation {
@@ -124,11 +124,18 @@ export interface Investigation {
   usage: InvestigationUsage | null;
   error: string | { code?: string; message?: string } | null;
   created_at: string;
+  report?: {
+    model: string;
+    planner: string;
+    agent_status: string;
+    actions: { step: number; role: string; kind: string; tool: string | null; ok: boolean; note: string }[];
+  } | null;
 }
 
 export interface InvestigationCapabilities {
   modes_enabled: InvestigationMode[];
   live_enabled: boolean;
+  local_enabled?: boolean;
 }
 
 export interface InvestigationAccepted {

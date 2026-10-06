@@ -28,6 +28,7 @@ export const MODE_LABEL: Record<string, string> = {
   offline: "오프라인 (규칙 기반 계획, LLM 호출 없음)",
   replay: "재생 (기록된 응답만 사용)",
   live: "실제 LLM 호출 (유료, 서버 예산 한도 안에서)",
+  local: "로컬 LLM (vLLM, 외부 API 과금 없음)",
 };
 
 export const FINDING_KIND_LABEL: Record<string, string> = {
@@ -51,6 +52,7 @@ export function modeOptions(c: InvestigationCapabilities | null | undefined): In
   const out: InvestigationMode[] = ["offline"];
   if (enabled.has("replay")) out.push("replay");
   if (c?.live_enabled === true && enabled.has("live")) out.push("live");
+  if (c?.local_enabled === true && enabled.has("local")) out.push("local");
   return out;
 }
 

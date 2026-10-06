@@ -37,7 +37,7 @@ class InvestigationCreate(BaseModel):
     # unknown keys (e.g. a tenant id or a budget sent by the page) are rejected
     model_config = ConfigDict(extra="forbid")
     strategy: Literal["single", "roles"] = "single"
-    mode: Literal["offline", "replay", "live"] = "offline"
+    mode: Literal["offline", "replay", "live", "local"] = "offline"
 
 
 def _repo(rt: Runtime) -> SqlInvestigations:

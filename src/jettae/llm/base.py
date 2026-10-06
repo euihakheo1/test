@@ -1,7 +1,7 @@
 """LLM provider contract: structured JSON output validated against a JSON schema.
 
 A provider turns an :class:`LLMRequest` into a :class:`ProviderResponse` (raw JSON text +
-token usage). Everything else -- offline/replay/live mode, budget reservation, tenant
+token usage). Everything else -- offline/replay/live/local mode, budget reservation, tenant
 "external LLM" consent, schema validation, limited retry -- lives in
 :class:`jettae.llm.gateway.LLMGateway`, so every provider gets the same policy.
 

@@ -298,6 +298,11 @@ test("modeOptions: offline is always first; live only when the server enables it
   assert.deepEqual(modeOptions({ modes_enabled: ["offline"], live_enabled: true }), ["offline"]);
 });
 
+test("local inference is selectable only when the server explicitly enables it", () => {
+  assert.deepEqual(modeOptions({ modes_enabled: ["offline", "local"], live_enabled: false }), ["offline"]);
+  assert.deepEqual(modeOptions({ modes_enabled: ["offline", "local"], live_enabled: false, local_enabled: true }), ["offline", "local"]);
+});
+
 test("investigation helpers: polling, required documents, usage, ordering, wording", () => {
   assert.ok(anyActive([{ status: "succeeded" }, { status: "queued" }]));
   assert.ok(!anyActive([{ status: "succeeded" }, { status: "refused" }, { status: "failed" }]));

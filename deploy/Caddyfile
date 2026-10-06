@@ -1,0 +1,11 @@
+{$JETTAE_DOMAIN} {
+    request_body {
+        max_size 22MB
+    }
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+    handle {
+        reverse_proxy web:3000
+    }
+}

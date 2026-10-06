@@ -94,3 +94,38 @@ The earlier section reports 105 packages; this export has 107 `name==version` li
 cause of the difference (counting method or the earlier working tree) was not investigated.
 Nothing was changed because of this audit.
 
+## 2026-10-06 (independent Linux review of GitHub base 874ca5c)
+
+This section records the current review, separately from the earlier Windows reports above.
+The lock files were unchanged. The vLLM adapter uses the existing `openai` SDK extra; vLLM
+itself is installed in a separate GPU environment, not in the project's lock file.
+
+Commands from the repository root:
+
+```bash
+uv export --frozen --all-extras --no-emit-project --format requirements-txt -o var/audit-requirements.txt
+uvx --from pip-audit==2.10.1 pip-audit -r var/audit-requirements.txt --no-deps --disable-pip --format json --output var/python-audit.json
+uvx --from pip-audit==2.10.1 pip-audit -r var/audit-requirements.txt --no-deps --disable-pip -s osv --format json --output var/python-osv-audit.json
+```
+
+The first tool installation timed out on `boolean-py==5.0`. A direct download of that wheel
+to `var/audit-wheels/` let installation complete. The actual successful commands used
+`UV_HTTP_TIMEOUT=10 UV_HTTP_RETRIES=0 uvx --default-index https://pypi.org/simple
+--find-links var/audit-wheels --from pip-audit==2.10.1` before the same `pip-audit` arguments.
+The downloaded tool wheel and raw reports are excluded from publication.
+
+| Check | Direct result |
+|---|---|
+| Python, PyPI | 103 applicable dependencies, 0 advisories, exit 0 |
+| Python, OSV | 103 applicable dependencies, 0 advisories, exit 0 |
+| `npm audit --omit=dev --json` in `frontend/` | 0 vulnerabilities, exit 0 |
+| `npm audit --json` in `frontend/` | 5 high, exit 1; same dev-only `braces` advisory and transitive chain documented above |
+
+The exported requirements have 107 pinned package lines; pip-audit applies environment markers
+and audited 103 in this Linux environment. This is not the same as the package count in the
+earlier Windows report. No forced major downgrade was made; the remaining dev-tool advisory
+is recorded rather than hidden. No `LICENSE` was introduced or changed.
+
+Not covered: separate vLLM/CUDA/PyTorch environment, container images, model weights and
+GitHub Actions implementations. No known advisory in these package databases is not proof
+of operational security or package correctness.

@@ -7,6 +7,8 @@ Modes (``JETTAE_LLM_MODE``):
   cached answer for the exact same key is reused (no cost); otherwise the maximum cost is
   reserved, the provider is called (limited retry on transient errors), the actual cost is
   settled and the answer is recorded for replay.
+- ``local``: only the private vLLM adapter; no paid budget or cloud SDK fallback. Actual
+  inference is the default (``JETTAE_LLM_LOCAL_CACHE=1`` explicitly enables cache reuse).
 
 Tenant data (``request.contains_tenant_data``) is sent to an external provider only when the
 tenant's ``allow_external_llm`` setting is true (:class:`TenantLLMPolicy`).
@@ -59,6 +61,7 @@ class LLMMode(StrEnum):
     OFFLINE = "offline"
     REPLAY = "replay"
     LIVE = "live"
+    LOCAL = "local"
 
 
 # ----------------------------------------------------------------------------- tenant policy
@@ -101,6 +104,7 @@ class GatewayConfig:
     backoff_s: float = 2.0
     schema_retries: int = 1  # one extra attempt when the output fails schema validation
     allow_unknown_price: bool = False
+    reuse_cache: bool = True
 
 
 @dataclass(frozen=True)
@@ -138,12 +142,12 @@ class LLMGateway:
     # ------------------------------------------------------------------ public
     @property
     def live(self) -> bool:
-        return self.config.mode is LLMMode.LIVE
+        return self.config.mode in (LLMMode.LIVE, LLMMode.LOCAL)
 
     def complete(self, request: LLMRequest, *, run_id: str | None = None) -> LLMResult:
         rid = run_id or new_run_id()
         key = request.replay_key(self.model)
-        cached = self.store.get(request.tenant_id, key)
+        cached = self.store.get(request.tenant_id, key) if self.config.reuse_cache else None
         if cached is not None:
             return self._from_cache(request, cached, key, rid)
         if not self.live:
@@ -201,6 +205,16 @@ class LLMGateway:
         )
 
     def _check_live_allowed(self, request: LLMRequest) -> tuple[LLMProvider, ModelPrice | None]:
+        if self.config.mode is LLMMode.LOCAL:
+            from jettae.llm.vllm import VLLMProvider
+
+            # Only this adapter is eligible for zero-budget execution. Switching to an
+            # external provider, even with a zero price override, cannot bypass the paid gate.
+            if not isinstance(self.provider, VLLMProvider):
+                raise LiveCallRefused("local mode requires the private vLLM adapter")
+            if request.image_count:
+                raise LLMError("the configured local vLLM model is text-only")
+            return self.provider, ModelPrice(Decimal(0), Decimal(0), "self-hosted API charge")
         if self.budget is None or self.budget.limit_krw <= 0:
             raise LiveCallRefused("live LLM calls need JETTAE_LLM_BUDGET_KRW > 0")
         if self.provider is None:
@@ -239,7 +253,13 @@ class LLMGateway:
 
             def attempt(reservation_box: list[Any] = reservation_box) -> ProviderResponse:
                 amount = max_cost_krw(request, price) if price is not None else Decimal(0)
-                r = budget.reserve(amount, model=provider.model, purpose=request.purpose)
+                # Local inference consumes token/time limits, but has no provider invoice to
+                # reserve. Keep the paid budget's strict zero-budget refusal unchanged.
+                r = (
+                    None
+                    if self.config.mode is LLMMode.LOCAL
+                    else budget.reserve(amount, model=provider.model, purpose=request.purpose)
+                )
                 reservation_box.append(r)
                 try:
                     return provider.complete(request, timeout_s=self.config.timeout_s)
@@ -249,19 +269,23 @@ class LLMGateway:
                 # settled at the full reserved amount. Only a failure the provider reported
                 # as not processed (rate limit, 4xx -> LLMError) is settled at 0.
                 except TransientLLMError as e:
-                    budget.settle(
-                        r,
-                        r.amount_krw if e.maybe_billed else Decimal(0),
-                        note=f"failed attempt{' (possibly billed)' if e.maybe_billed else ''}: {e}",
-                    )
+                    if r is not None:
+                        billing_note = " (possibly billed)" if e.maybe_billed else ""
+                        budget.settle(
+                            r,
+                            r.amount_krw if e.maybe_billed else Decimal(0),
+                            note=f"failed attempt{billing_note}: {e}",
+                        )
                     raise
                 except LLMError as e:
-                    budget.settle(r, Decimal(0), note=f"rejected: {e}")
+                    if r is not None:
+                        budget.settle(r, Decimal(0), note=f"rejected: {e}")
                     raise
                 except BaseException as e:
-                    budget.settle(
-                        r, r.amount_krw, note=f"unexpected failure, possibly billed: {e!r}"
-                    )
+                    if r is not None:
+                        budget.settle(
+                            r, r.amount_krw, note=f"unexpected failure, possibly billed: {e!r}"
+                        )
                     raise
 
             resp, n = call_with_retry(
@@ -273,7 +297,8 @@ class LLMGateway:
             attempts += n
             r = reservation_box[-1]
             cost = price.cost(resp.usage) if price is not None else None
-            budget.settle(r, cost if cost is not None else Decimal(0), note=resp.stop_reason)
+            if r is not None:
+                budget.settle(r, cost if cost is not None else Decimal(0), note=resp.stop_reason)
             total_usage = total_usage + resp.usage
             total_cost = None if (total_cost is None or cost is None) else total_cost + cost
             if resp.stop_reason == "refusal":
@@ -447,11 +472,15 @@ def gateway_from_env(
     provider: LLMProvider | None = None,
 ) -> LLMGateway:
     """Build the gateway from ``JETTAE_LLM_*`` settings. The provider client is created only
-    in live mode (offline/replay never constructs an SDK client)."""
+    in live/local mode (offline/replay never constructs an SDK client)."""
     e: Mapping[str, str] = os.environ if env is None else env
-    m = LLMMode(mode or e.get("JETTAE_LLM_MODE", "offline") or "offline")
-    name = (e.get("JETTAE_LLM_PROVIDER") or "anthropic").lower()
-    if name == "anthropic":
+    m = LLMMode(mode or (e.get("JETTAE_LLM_MODE", "offline") or "offline").strip().lower())
+    name = (e.get("JETTAE_LLM_PROVIDER") or "anthropic").strip().lower()
+    if name == "vllm":
+        from jettae.llm.vllm import DEFAULT_MODEL
+
+        model = e.get("JETTAE_VLLM_MODEL") or DEFAULT_MODEL
+    elif name == "anthropic":
         from jettae.llm.anthropic import DEFAULT_MODEL
 
         model = e.get("JETTAE_LLM_MODEL") or DEFAULT_MODEL
@@ -460,15 +489,27 @@ def gateway_from_env(
         if not model:
             raise LLMError("set JETTAE_OPENAI_MODEL for JETTAE_LLM_PROVIDER=openai")
     else:
-        raise LLMError(f"unknown JETTAE_LLM_PROVIDER {name!r} (anthropic | openai)")
+        raise LLMError(f"unknown JETTAE_LLM_PROVIDER {name!r} (anthropic | openai | vllm)")
+    if m is LLMMode.LOCAL and name != "vllm":
+        raise LiveCallRefused("local mode requires JETTAE_LLM_PROVIDER=vllm")
+    if m is LLMMode.LIVE and name == "vllm":
+        raise LiveCallRefused("self-hosted vLLM requires JETTAE_LLM_MODE=local")
     limit = _env_decimal(e, "JETTAE_LLM_BUDGET_KRW")
     if provider is None and m is LLMMode.LIVE and limit <= 0:
         # refuse before any budget store (file / database) is opened
         raise LiveCallRefused("JETTAE_LLM_MODE=live needs JETTAE_LLM_BUDGET_KRW > 0")
-    budget = budget_from_env(e, limit=limit, live=m is LLMMode.LIVE)
-    if provider is None and m is LLMMode.LIVE:
+    budget = (
+        Budget(Decimal(0))
+        if m is LLMMode.LOCAL
+        else budget_from_env(e, limit=limit, live=m is LLMMode.LIVE)
+    )
+    if provider is None and m in (LLMMode.LIVE, LLMMode.LOCAL):
         try:
-            if name == "anthropic":
+            if name == "vllm":
+                from jettae.llm.vllm import VLLMProvider
+
+                provider = VLLMProvider(model, env=e)
+            elif name == "anthropic":
                 from jettae.llm.anthropic import AnthropicProvider
 
                 provider = AnthropicProvider(model)
@@ -490,6 +531,7 @@ def gateway_from_env(
             timeout_s=float(e.get("JETTAE_LLM_TIMEOUT_S") or 120),
             max_retries=int(e.get("JETTAE_LLM_MAX_RETRIES") or 2),
             allow_unknown_price=(e.get("JETTAE_LLM_ALLOW_UNKNOWN_PRICE") == "1"),
+            reuse_cache=m is not LLMMode.LOCAL or e.get("JETTAE_LLM_LOCAL_CACHE") == "1",
         ),
         budget=budget,
         prices=PriceTable.from_env(e),

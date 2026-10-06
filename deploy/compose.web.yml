@@ -1,0 +1,36 @@
+# Add to docker-compose.yml for a complete HTTPS application. Only Caddy publishes public ports.
+services:
+  api:
+    environment:
+      FORWARDED_ALLOW_IPS: ${JETTAE_REVERSE_PROXY_IP:-172.31.250.10}
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        JETTAE_API_ORIGIN: http://api:8000
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_started
+  proxy:
+    image: caddy:2-alpine
+    environment:
+      JETTAE_DOMAIN: ${JETTAE_DOMAIN:?set JETTAE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      default:
+        ipv4_address: ${JETTAE_REVERSE_PROXY_IP:-172.31.250.10}
+    depends_on:
+      - api
+      - web
+    restart: unless-stopped
+volumes:
+  caddy_data:
+  caddy_config:

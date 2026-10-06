@@ -10,19 +10,19 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     UV_PROJECT_ENVIRONMENT=/app/.venv \
     PATH=/app/.venv/bin:$PATH
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.12.23 /uv /usr/local/bin/uv
 
 WORKDIR /app
 # dependencies first (layer cache), then the project itself
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-install-project --extra postgres
+RUN uv sync --frozen --no-install-project --extra postgres --extra llm --extra agents
 COPY src ./src
 COPY migrations ./migrations
 COPY alembic.ini ./
-RUN uv sync --frozen --extra postgres
+RUN uv sync --frozen --extra postgres --extra llm --extra agents
 
 RUN useradd --system --uid 10001 --home /app jettae \
-    && mkdir -p /data/blobs \
+    && mkdir -p /data/blobs /data/llm_cache \
     && chown -R jettae /data
 USER jettae
 

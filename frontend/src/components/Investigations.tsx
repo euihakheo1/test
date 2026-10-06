@@ -157,7 +157,7 @@ export function Investigations({ decisionId }: { decisionId: string }) {
           ) : (
             <p className="muted small">보기 전용 역할은 조사를 실행할 수 없습니다.</p>
           )}
-          {caps && !caps.live_enabled && (
+          {caps && !caps.live_enabled && !caps.local_enabled && (
             <p className="hint">
               실제 LLM 호출은 서버에서 예산과 사용 설정을 켠 경우에만 선택할 수 있습니다. 기본은 LLM 호출이 없는
               오프라인 방식입니다.
@@ -235,6 +235,19 @@ function InvestigationItem({ inv }: { inv: Investigation }) {
         <p className="muted small">추가로 확인할 점을 찾지 못했습니다.</p>
       )}
       <p className="hint">{usageText(inv.usage)}</p>
+      {inv.report && (
+        <details className="small" data-testid="investigation-trace">
+          <summary>조사 과정과 사용 모델</summary>
+          <p>모델: {inv.report.model || "LLM 호출 없음"} · 상태: {inv.report.agent_status}</p>
+          <ol>
+            {inv.report.actions.map((a, i) => (
+              <li key={i}>
+                {a.step}. {a.role} · {a.tool || a.kind} · {a.ok ? "확인" : "보류"}
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
     </li>
   );
 }

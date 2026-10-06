@@ -13,6 +13,10 @@
 
 ## 목차
 
+처음 실행하는 Windows 사용자는 [PowerShell·WSL 실행과 포트폴리오 준비](docs/GETTING_STARTED.md)를
+순서대로 따른다. 무료 로컬 vLLM, API·worker·웹 터미널, 실제 호출 확인과 전체 운영 Compose 명령이 있다.
+이번 마무리 검증은 [FINAL_VERIFICATION.md](docs/FINAL_VERIFICATION.md)에 별도로 기록한다.
+
 1. [하는 것 / 하지 않는 것](#하는-것--하지-않는-것)
 2. [저장소에 있는 것과 없는 것](#저장소에-있는-것과-없는-것)
 3. [준비물과 설치](#준비물과-설치)
@@ -76,7 +80,7 @@
 | 저장소에 있음(공개 대상) | 저장소에 없음(`.gitignore`, 공개 대상 아님) |
 |---|---|
 | 소스·테스트·마이그레이션·배포 파일(`deploy/`)·CI(`.github/`) | 실제 `.env`, `.env.live-llm`, `.env.prod`, `frontend/.env.local` 등 값이 든 설정 파일 |
-| 가짜 값만 든 설정 예시 5개(아래 표) | API 키, JWT 서명 키, DB 비밀번호, 본인 법제처 OC |
+| 가짜 값만 든 설정 예시 6개(아래 표) | API 키, JWT 서명 키, DB 비밀번호, 본인 법제처 OC |
 | 공개 자료의 수집 기록(`data/manifests/`), 공정위 의결서 표 전사와 본문 수치·짧은 본문 발췌(`data/seeds/`, `docs/PUBLIC_USE.md` 2절), 평가 요약(`docs/eval_results.md`) | 내려받은 원본(`data/raw/`), 다시 만들 수 있는 평가 결과 JSON(`data/results/`) |
 | 손으로 쓴 테스트 입력(`tests/`, `frontend/e2e/fixtures/`) | 사용자가 올린 파일·DB·LLM 캐시·비용 원장(`var/`), `*.db`, 로그(`*.log`, `logs/`), 캐시(`.mypy_cache` 등, `node_modules`, `.next`, E2E 결과), 개인 도구 설정(`.npmrc`, `.claude/settings.local.json` 등) |
 
@@ -112,11 +116,12 @@ Windows에서 긴 경로(LongPathsEnabled)가 꺼져 있고 저장소 경로가 
 
 ## 설정 파일(.env) 읽는 규칙
 
-설정 예시 파일은 다섯 개이며 모든 비밀값 자리는 `change-me-...` 같은 가짜 값입니다.
+설정 예시 파일은 여섯 개이며 모든 비밀값 자리는 `change-me-...` 같은 가짜 값입니다.
 
 | 예시 파일 | 쓰임 | 복사해서 쓰는 이름(커밋 금지) |
 |---|---|---|
 | `.env.example` | 로컬 데모·개발(`JETTAE_ENV=dev`, SQLite, LLM 오프라인·예산 0) | `.env` |
+| `.env.vllm.example` | 무료 로컬 추론(`local`, 사설 vLLM, 유료 예산 0) | `.env.vllm` |
 | `.env.live-llm.example` | 실제 LLM 실행(공급자·모델·API 키·예산·환율·가격·공유 예산·회사 동의) | `.env.live-llm` |
 | `.env.prod.example` | 운영(PostgreSQL, JWT 서명 키, 허용 출처, Secure 쿠키, 본인 DRF OC, worker 설정) | 서버의 비밀 저장소 |
 | `frontend/.env.example` | 화면(Next.js) 빌드 설정 | `frontend/.env.local` |
@@ -264,6 +269,7 @@ uv run jettae eval bpi                                                 # E4 (bpi
 고릅니다.
 
 - `offline`(기본): 규칙 기반 계획, LLM 호출 없음.
+- `local`: 서버가 설정한 사설 vLLM을 실제 호출(외부 API 과금 0, [실행 절차](docs/GETTING_STARTED.md)).
 - `replay`: 기록된 LLM 응답만 재생(없으면 `failed`, `replay_miss`).
 - `live`: 서버 설정이 허용할 때만 보입니다([실제 LLM 실행](#실제-llm-실행유료-호출)). 허용하지 않는
   서버에 요청하면 조사는 `refused`로 끝나고 유료 호출은 없습니다.
@@ -296,7 +302,8 @@ uv run jettae agent run --strategy roles --planner heuristic --decision "$DECISI
 ```
 
 `--planner heuristic`은 LLM을 부르지 않습니다. 기본값 `--planner llm --mode replay`는 기록된 응답만 쓰고,
-실제 호출은 `--mode live`와 아래 실제 LLM 설정이 모두 있을 때만 일어납니다. `var/cookies.txt`에는 로그인
+로컬 실제 호출은 `.env.vllm` 설정 후 `--mode local`, 유료 호출은 `--mode live`와 아래 유료 LLM
+설정을 사용합니다. [실행 순서](docs/GETTING_STARTED.md)를 따릅니다. `var/cookies.txt`에는 로그인
 쿠키가 들어 있으니 끝나면 지웁니다(`rm var/cookies.txt`).
 
 ### MCP 서버
@@ -364,6 +371,10 @@ uv run jettae ocr ftc-tables --decision 19065 --limit 3        # 공개 표 이�
 공급자만 쓰며, 실제 모델의 판독·조사 품질은 검증되지 않았습니다.
 
 ## 운영 배포
+
+웹·HTTPS 프록시·내부 vLLM까지 포함한 전체 배포는 [실행 안내 8절](docs/GETTING_STARTED.md#8-linux-서버에-계속-운영하기)을
+따릅니다. 아래는 기존 API·worker 배포와 설정 검사 설명입니다. 기본 Docker 이미지에도 `llm`, `agents`
+extra가 포함되어 모델 호출과 LangGraph가 배포에서 빠지지 않습니다.
 
 운영은 `JETTAE_ENV=prod`, PostgreSQL, HTTPS 역프록시 뒤의 API·worker·화면입니다.
 
@@ -437,11 +448,15 @@ npm run e2e
 
 E2E는 PATH의 `uv`를 씁니다(다른 위치면 `JETTAE_UV`에 경로). CI(`.github/workflows/ci.yml`)는 backend(ruff,
 format, mypy, pytest, SQLite 마이그레이션 왕복, 비밀값 검사), postgres(폐기용 PostgreSQL 16 서비스
-컨테이너에서 마이그레이션 왕복과 PostgreSQL 테스트), frontend(lint, typecheck, test, build), e2e(Playwright)
+컨테이너에서 마이그레이션 왕복과 PostgreSQL 테스트), frontend(lint, typecheck, test, build), e2e(Playwright),
+docker-build(Compose 설정 검사, API·standalone 웹 이미지 빌드)
 작업으로 나뉘며 backend 작업은 gitleaks로 모든 커밋도 검사합니다. 저장소 비밀값을 쓰지 않으며 모든 작업이 `JETTAE_LLM_MODE=offline`, 예산 0으로
 실행되고 API 키가 있으면 실패합니다. 의존성 취약점 검사 결과는 `docs/security/dependency-audit.md`.
 
 ## 구현 · 검증 · 미검증
+
+아래 표는 이전 단계의 기록입니다. 이번 수정 커밋에서 직접 실행한 검사와 미검증 영역은
+[FINAL_VERIFICATION.md](docs/FINAL_VERIFICATION.md)를 기준으로 확인합니다.
 
 "구현"은 코드와 테스트가 있다는 뜻이고, "검증"은 실제로 돌려 본 범위입니다. 테스트 통과는 아래 적은
 범위만 뜻하며 운영 보안 전체나 LLM 정확도를 보증하지 않습니다. 명령과 결과는 `docs/PROGRESS.md`.
